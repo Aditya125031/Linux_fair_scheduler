@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "experiment_id": "quick-smoke",
+  "duration_seconds": 5,
+  "interactive": {
+    "arrival_interval_ms": 100,
+    "burst_iterations": 10000
+  },
+  "batch": {
+    "workers": 1,
+    "unit_iterations": 100000
+  },
+  "policy": {
+    "type": "baseline"
+  }
+}

@@ -1,0 +1,30 @@
+tracepoint:sched:sched_wakeup
+{
+    printf("%llu\tWAKEUP\t%d\t-1\t-1\t-1\t%d\t-1\t-1\t%d\t%d\n",
+        nsecs, args->pid, args->prio, cpu, args->target_cpu);
+}
+
+tracepoint:sched:sched_switch
+{
+    printf("%llu\tSWITCH\t-1\t%d\t%d\t%ld\t-1\t%d\t%d\t%d\t-1\n",
+        nsecs, args->prev_pid, args->next_pid, args->prev_state,
+        args->prev_prio, args->next_prio, cpu);
+}
+
+// BEGIN executes before probes are attached. Keep this heartbeat after the
+// scheduler probes and use it as the startup marker and bounded end timestamp.
+interval:ms:10
+{
+    @clock_heartbeat = nsecs;
+    if (@collector_ready == 0) {
+        @collector_ready = 1;
+        printf("READY\n");
+    }
+}
+
+END
+{
+    printf("%llu\tEND\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1\n", @clock_heartbeat);
+    clear(@clock_heartbeat);
+    clear(@collector_ready);
+}

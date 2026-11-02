@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.tmp/
 
 # Editors
 .vscode/
@@ -15,3 +20,17 @@ venv/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Generated experiment data; preserve the tracked directory marker.
+results/raw/*
+!results/raw/.gitkeep
+
+# Existing CSV files with unverified provenance
+/batch_results.csv
+/interactive_results.csv
+
+# Generated experiment data
+/results/processed/*
+!/results/processed/.gitkeep
+/results/figures/*
+!/results/figures/.gitkeep

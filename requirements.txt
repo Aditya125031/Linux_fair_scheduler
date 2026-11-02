@@ -1,0 +1,3 @@
+# Install the portable development and unit-test dependencies with:
+#   python -m pip install -r requirements.txt
+-e .[test]
