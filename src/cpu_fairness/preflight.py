@@ -23,8 +23,15 @@ REQUIRED_FIELDS = {
 
 def tracepoint_fields(format_path: str | Path) -> set[str]:
     """Parse field names from one kernel tracepoint ``format`` file."""
+    return _tracepoint_fields_text(
+        Path(format_path).read_text(encoding="utf-8", errors="replace")
+    )
+
+
+def _tracepoint_fields_text(contents: str) -> set[str]:
+    """Parse field names from tracepoint format contents."""
     fields: set[str] = set()
-    for line in Path(format_path).read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in contents.splitlines():
         declaration = line.partition(";")[0]
         match = re.match(
             r"\s*field:\s*.*\s([A-Za-z_]\w*)(?:\[[^\]]*\])?\s*$",
@@ -35,9 +42,20 @@ def tracepoint_fields(format_path: str | Path) -> set[str]:
     return fields
 
 
-def _tracefs_root() -> Path | None:
+def _tracefs_root(sudo_path: str | None = None) -> Path | None:
+    """Find tracefs using sudo without prompting or changing mount state."""
+    sudo_path = sudo_path or shutil.which("sudo")
+    if not sudo_path:
+        return None
     for root in (Path("/sys/kernel/tracing"), Path("/sys/kernel/debug/tracing")):
-        if (root / "events" / "sched").is_dir():
+        try:
+            completed = subprocess.run(
+                [sudo_path, "-n", "test", "-d", str(root / "events" / "sched")],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if completed.returncode == 0:
             return root
     return None
 
@@ -109,7 +127,8 @@ def collect_preflight() -> dict[str, Any]:
     if bpftrace_path:
         checks["bpftrace_version"] = _run_version([bpftrace_path, "--version"])
 
-    tracefs = _tracefs_root()
+    sudo_path = shutil.which("sudo")
+    tracefs = _tracefs_root(sudo_path)
     checks["tracefs"] = {
         "ok": tracefs is not None,
         "detail": str(tracefs) if tracefs else "scheduler tracefs events not found",
@@ -119,7 +138,16 @@ def collect_preflight() -> dict[str, Any]:
         for event_name, required in REQUIRED_FIELDS.items():
             format_file = tracefs / "events" / "sched" / event_name / "format"
             try:
-                actual = tracepoint_fields(format_file)
+                if not sudo_path:
+                    raise OSError("sudo not found")
+                completed = subprocess.run(
+                    [sudo_path, "-n", "cat", str(format_file)],
+                    capture_output=True, text=True, timeout=5, check=False,
+                )
+                if completed.returncode != 0:
+                    detail = (completed.stderr or "sudo could not read format file").strip()
+                    raise OSError(detail)
+                actual = _tracepoint_fields_text(completed.stdout)
                 missing = sorted(required - actual)
                 tracepoint_results[event_name] = {
                     "available": True,
@@ -129,7 +157,7 @@ def collect_preflight() -> dict[str, Any]:
                     "missing_fields": missing,
                     "ok": not missing,
                 }
-            except OSError as exc:
+            except (OSError, subprocess.TimeoutExpired) as exc:
                 tracepoint_results[event_name] = {
                     "available": False,
                     "format_file": str(format_file),
@@ -155,7 +183,6 @@ def collect_preflight() -> dict[str, Any]:
         "detail": f"{cgroup2}; controllers={controllers}",
     }
 
-    sudo_path = shutil.which("sudo")
     sudo_check = (
         _run_version([sudo_path, "-n", "bpftrace", "--version"])
         if sudo_path and bpftrace_path
