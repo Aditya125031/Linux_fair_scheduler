@@ -7,7 +7,7 @@ This guide runs one short baseline mixed-workload experiment. It does not run th
 Use the Ubuntu guest's existing project checkout after the Windows changes have been transferred or committed and pulled. From that checkout's root:
 
 ```bash
-cd ~/Linux-_fair_scheduler
+cd ~/Linux_fair_scheduler
 git status --short
 ```
 
@@ -83,8 +83,14 @@ Expect status completed, a batch process nice value of 5, and an interactive nic
 
 Copy the `run_id` from the CLI output and substitute it below. Send the complete preflight JSON, smoke CLI output, manifest, collector stderr, analysis summary, and a small raw trace sample. Do not send the entire trace unless requested.
 
+Print the per-run metrics summary without modifying the raw or processed artifacts:
+
+    RUN_ID='paste-run-id-here'
+    python3 -m cpu_fairness.cli analyze-run "results/raw/$RUN_ID"
+
+The summary reports response-latency p50/p95 and sample count, batch throughput, and per-TID runnable-wait and CPU-service summaries. Percentiles use nearest-rank. Application response latency and scheduler wait use separate clock domains and are not combined.
+
 ```bash
-RUN_ID='paste-run-id-here'
 cat /tmp/cpu-fairness-preflight.json
 cat /tmp/cpu-fairness-smoke.json
 cat "results/raw/$RUN_ID/manifest.json"

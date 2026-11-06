@@ -53,6 +53,12 @@ class CliTests(unittest.TestCase):
             with self.assertRaisesRegex(ExperimentError, "Linux-only"):
                 run_smoke("configs/quick.json")
 
+    def test_analyze_run_command_reports_missing_manifest(self):
+        errors = StringIO()
+        with redirect_stderr(errors):
+            self.assertEqual(main(["analyze-run", "/missing/run"]), 1)
+        self.assertIn("run manifest", errors.getvalue())
+
     def test_fixed_nice_policy_selects_and_passes_batch_target(self):
         target = _batch_nice_target({"type": "fixed_nice", "batch_nice": 5}, 0)
         self.assertEqual(target, 5)

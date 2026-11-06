@@ -2,7 +2,7 @@
 
 This repository studies runnable delay, interactive response latency, and CPU service fairness under mixed interactive and batch workloads. The Windows checkout is the development environment. Real scheduler tracing and experiments are run separately in the Ubuntu KVM guest; a Windows test cannot validate eBPF or Linux scheduler behavior.
 
-The baseline end-to-end smoke path has completed once in the Ubuntu KVM guest, including preflight, the bpftrace collector, both workloads, and wait/service reconstruction. The runner now also supports a fixed-nice pilot that sets the batch worker to a configured nice value while leaving the interactive workload unchanged. That policy still needs validation in the guest; one successful smoke is not a repeated policy study.
+The baseline and one fixed-nice pilot have completed in the Ubuntu KVM guest, including preflight, the bpftrace collector, both workloads, and wait/service reconstruction. The fixed-nice run verified batch nice +5 while interactive remained at nice 0. Per-run latency, throughput, wait, and service summaries are available; repeated runs and aggregation are still needed before drawing policy conclusions.
 
 ## Current setup
 
@@ -43,6 +43,7 @@ The Linux-only commands are:
 ```bash
 python3 -m cpu_fairness.cli preflight --json
 python3 -m cpu_fairness.cli smoke --config configs/quick.json --output-root results
+python3 -m cpu_fairness.cli analyze-run results/raw/PASTE_RUN_ID
 ```
 
 Use these only in the Ubuntu guest. Follow [docs/reproduction_guide.md](docs/reproduction_guide.md) for setup and the validation checklist.

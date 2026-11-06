@@ -8,6 +8,7 @@ import sys
 from collections.abc import Sequence
 
 from cpu_fairness import __version__
+from cpu_fairness.analysis.metrics import AnalysisError, analyze_run
 from cpu_fairness.config import ConfigError, load_config
 from cpu_fairness.experiment import ExperimentError, run_smoke
 from cpu_fairness.preflight import collect_preflight, format_preflight
@@ -34,6 +35,11 @@ def _build_parser() -> argparse.ArgumentParser:
     smoke_parser = subparsers.add_parser("smoke", help="run one short Linux mixed-workload experiment")
     smoke_parser.add_argument("--config", default="configs/quick.json")
     smoke_parser.add_argument("--output-root", default="results")
+
+    analysis_parser = subparsers.add_parser(
+        "analyze-run", help="summarize metrics from one completed run"
+    )
+    analysis_parser.add_argument("run_directory", help="path to results/raw/<run-id>")
     return parser
 
 
@@ -57,12 +63,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 print(format_preflight(result))
             return 0 if result.get("ready") else 2
+        elif args.command == "analyze-run":
+            result = analyze_run(args.run_directory)
         else:
             result = run_smoke(args.config, args.output_root)
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except ExperimentError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except AnalysisError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
