@@ -17,6 +17,8 @@ class CollectorError(RuntimeError):
 
 
 class BpftraceCollector:
+    _TRACE_EVENTS = {"WAKEUP", "SWITCH", "END"}
+
     def __init__(self, trace_path: str | Path, stderr_path: str | Path):
         self.trace_path = Path(trace_path)
         self.stderr_path = Path(stderr_path)
@@ -52,7 +54,6 @@ class BpftraceCollector:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
-                start_new_session=True,
             )
         except OSError as exc:
             self._close_files()
@@ -73,20 +74,22 @@ class BpftraceCollector:
         assert self.process is not None and self.process.stdout is not None
         try:
             for line in self.process.stdout:
-                if not self._ready_seen:
-                    if line.strip() == "READY":
+                if line.strip() == "READY":
+                    if not self._ready_seen:
                         self._ready_seen = True
                         self._ready.put_nowait(("ready", None))
-                    else:
-                        self._trace_file.write(line)
-                        self._trace_file.flush()
-                        self._ready.put_nowait(("error", line.strip()))
-                        self._ready_seen = True
                     continue
-                self._trace_file.write(line)
-                self._event_lines += 1
-                if self._event_lines % 256 == 0:
-                    self._trace_file.flush()
+                if not self._ready_seen:
+                    if self._is_trace_record(line):
+                        self._write_trace_line(line)
+                        self._trace_file.flush()
+                        continue
+                    if not line.strip():
+                        continue
+                    self._ready.put_nowait(("error", line.strip()))
+                    self._ready_seen = True
+                    continue
+                self._write_trace_line(line)
             self._trace_file.flush()
             if not self._ready_seen:
                 self._ready.put_nowait(("error", f"bpftrace exited before READY (status {self.process.poll()})"))
@@ -97,27 +100,33 @@ class BpftraceCollector:
                 except queue.Full:
                     pass
 
+    @classmethod
+    def _is_trace_record(cls, line: str) -> bool:
+        columns = line.rstrip("\r\n").split("\t")
+        return (
+            len(columns) == 11
+            and columns[1] in cls._TRACE_EVENTS
+            and columns[0].isdigit()
+        )
+
+    def _write_trace_line(self, line: str) -> None:
+        self._trace_file.write(line)
+        self._event_lines += 1
+        if self._event_lines % 256 == 0:
+            self._trace_file.flush()
+
     def stop(self, timeout_seconds: float = 5.0) -> dict[str, Any]:
         process = self.process
         if process is not None and process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGINT)
-            except (AttributeError, OSError):
-                process.send_signal(signal.SIGINT)
+            process.send_signal(signal.SIGINT)
             try:
                 process.wait(timeout=timeout_seconds)
             except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (AttributeError, OSError):
-                    process.terminate()
+                process.terminate()
                 try:
                     process.wait(timeout=2.0)
                 except subprocess.TimeoutExpired:
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except (AttributeError, OSError):
-                        process.kill()
+                    process.kill()
                     process.wait()
         if self._reader is not None:
             self._reader.join(timeout=2.0)
