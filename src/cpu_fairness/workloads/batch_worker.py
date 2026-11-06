@@ -29,12 +29,34 @@ def _identity() -> dict[str, int | str | None]:
     return {"tgid": os.getpid(), "tid": tid, "nice_value": nice}
 
 
+def _set_nice_value(nice_value: int | None) -> None:
+    """Set and verify an absolute nice value for this unprivileged worker."""
+    if nice_value is None:
+        return
+    if (
+        isinstance(nice_value, bool)
+        or not isinstance(nice_value, int)
+        or not 0 <= nice_value <= 19
+    ):
+        raise ValueError("nice_value must be an integer from 0 through 19")
+    try:
+        os.setpriority(os.PRIO_PROCESS, 0, nice_value)
+        actual = os.getpriority(os.PRIO_PROCESS, 0)
+    except (AttributeError, OSError) as exc:
+        raise RuntimeError(f"could not set batch nice value to {nice_value}: {exc}") from exc
+    if actual != nice_value:
+        raise RuntimeError(
+            f"batch nice value verification failed: requested {nice_value}, observed {actual}"
+        )
+
+
 def run_batch(
     duration_seconds: float,
     unit_iterations: int,
     worker_id: str,
     output_path: str | Path,
     ready_path: str | Path | None = None,
+    nice_value: int | None = None,
 ) -> dict[str, Any]:
     """Run fixed-size CPU units until duration expires or a stop signal arrives."""
     global _stop_requested
@@ -42,6 +64,7 @@ def run_batch(
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
 
+    _set_nice_value(nice_value)
     identity = _identity()
     log_path = Path(output_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,15 +104,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--worker-id", default="batch-1")
     parser.add_argument("--output", required=True)
     parser.add_argument("--ready-file", required=True)
+    parser.add_argument("--nice-value", type=int)
     args = parser.parse_args(argv)
     if args.duration <= 0 or args.unit_iterations <= 0:
         parser.error("duration and unit iterations must be positive")
+    if args.nice_value is not None and not 0 <= args.nice_value <= 19:
+        parser.error("nice value must be from 0 through 19")
     summary = run_batch(
         args.duration,
         args.unit_iterations,
         args.worker_id,
         args.output,
         args.ready_file,
+        args.nice_value,
     )
     print(json.dumps(summary, sort_keys=True))
     return 0

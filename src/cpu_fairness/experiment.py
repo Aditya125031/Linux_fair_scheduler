@@ -111,20 +111,56 @@ def _open_child_log(path: Path):
     return path.open("x", encoding="utf-8", newline="")
 
 
+def _batch_workload_command(
+    duration: str,
+    unit_iterations: int,
+    output: Path,
+    ready_file: Path,
+    nice_value: int | None,
+) -> list[str]:
+    command = [
+        sys.executable, "-m", "cpu_fairness.workloads.batch_worker",
+        "--duration", duration,
+        "--unit-iterations", str(unit_iterations),
+        "--worker-id", "batch-1",
+        "--output", str(output),
+        "--ready-file", str(ready_file),
+    ]
+    if nice_value is not None:
+        command.extend(("--nice-value", str(nice_value)))
+    return command
+
+
+def _batch_nice_target(policy: dict[str, Any], runner_nice_value: int) -> int | None:
+    if policy["type"] != "fixed_nice":
+        return None
+    nice_target = policy["batch_nice"]
+    if nice_target <= runner_nice_value:
+        raise ConfigError(
+            "policy.batch_nice must be greater than the runner's nice value "
+            f"({runner_nice_value}) so batch work is deprioritized"
+        )
+    return nice_target
+
+
 def run_smoke(config_path: str | Path, output_root: str | Path = "results") -> dict[str, Any]:
-    """Run a single baseline smoke experiment; only the collector uses sudo."""
+    """Run one bounded baseline or fixed-nice experiment; only the collector uses sudo."""
     if not sys.platform.startswith("linux"):
         raise ExperimentError("smoke experiments are Linux-only; run this command inside the Ubuntu guest")
     if not hasattr(os, "geteuid") or os.geteuid() == 0:
         raise ExperimentError("do not run the project runner as root; only bpftrace is launched through sudo")
 
     config = load_config(config_path)
-    if config["policy"]["type"] != "baseline":
-        raise ConfigError("this first smoke runner supports only the baseline policy")
     if config["batch"]["workers"] != 1:
         raise ConfigError("the first smoke runner requires exactly one batch worker")
     if config["duration_seconds"] > 15:
         raise ConfigError("smoke duration is capped at 15 seconds to bound system-wide trace volume")
+
+    try:
+        runner_nice_value = os.getpriority(os.PRIO_PROCESS, 0)
+    except (AttributeError, OSError) as exc:
+        raise ExperimentError(f"could not read runner nice value: {exc}") from exc
+    batch_nice_target = _batch_nice_target(config["policy"], runner_nice_value)
 
     preflight = collect_preflight()
     if not preflight.get("ready"):
@@ -154,6 +190,13 @@ def run_smoke(config_path: str | Path, output_root: str | Path = "results") -> d
         "environment": collect_system_info(raw_dir),
         "preflight": preflight,
         "configuration": config,
+        "policy_application": {
+            "policy": config["policy"]["type"],
+            "runner_nice_value": runner_nice_value,
+            "interactive_nice_value": None,
+            "batch_nice_value": None,
+            "batch_nice_target": batch_nice_target,
+        },
         "clock_domains": {
             "workload_and_collector_lifecycle": "Python time.monotonic_ns",
             "scheduler_events": "bpftrace nsecs",
@@ -203,27 +246,42 @@ def run_smoke(config_path: str | Path, output_root: str | Path = "results") -> d
         interactive_identity = _process_identity(
             interactive.pid, _wait_ready(interactive_ready, interactive), "interactive"
         )
+        manifest["processes"]["interactive"] = interactive_identity
+        manifest["policy_application"]["interactive_nice_value"] = interactive_identity["nice_value"]
+        if interactive_identity["nice_value"] != runner_nice_value:
+            raise ExperimentError(
+                "interactive workload nice value changed from the runner default: "
+                f"expected {runner_nice_value}, observed {interactive_identity['nice_value']}"
+            )
 
         batch_ready = raw_dir / "batch.ready.json"
         batch_summary = raw_dir / "batch.json"
         batch_stdout = _open_child_log(raw_dir / "batch.stdout.log")
         child_logs.append(batch_stdout)
         batch = subprocess.Popen(
-            [
-                sys.executable, "-m", "cpu_fairness.workloads.batch_worker",
-                "--duration", duration,
-                "--unit-iterations", str(config["batch"]["unit_iterations"]),
-                "--worker-id", "batch-1",
-                "--output", str(batch_summary),
-                "--ready-file", str(batch_ready),
-            ],
+            _batch_workload_command(
+                duration,
+                config["batch"]["unit_iterations"],
+                batch_summary,
+                batch_ready,
+                batch_nice_target,
+            ),
             stdout=batch_stdout,
             stderr=subprocess.STDOUT,
             text=True,
         )
         children["batch"] = batch
         batch_identity = _process_identity(batch.pid, _wait_ready(batch_ready, batch), "batch")
+        manifest["processes"]["batch"] = batch_identity
+        manifest["policy_application"]["batch_nice_value"] = batch_identity["nice_value"]
+        expected_batch_nice = batch_nice_target if batch_nice_target is not None else runner_nice_value
+        if batch_identity["nice_value"] != expected_batch_nice:
+            raise ExperimentError(
+                "batch workload nice value mismatch: "
+                f"expected {expected_batch_nice}, observed {batch_identity['nice_value']}"
+            )
         manifest["processes"] = {
+            **manifest["processes"],
             "interactive": interactive_identity,
             "batch": batch_identity,
             "identity_semantics": "scheduler tracepoint pid is a task ID/TID; for verified single-thread workloads TID equals TGID/process PID",

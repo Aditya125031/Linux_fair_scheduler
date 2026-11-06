@@ -7,7 +7,13 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from cpu_fairness.cli import main
-from cpu_fairness.experiment import ExperimentError, run_smoke
+from cpu_fairness.experiment import (
+    ExperimentError,
+    _batch_nice_target,
+    _batch_workload_command,
+    run_smoke,
+)
+from cpu_fairness.config import ConfigError
 
 
 class CliTests(unittest.TestCase):
@@ -46,6 +52,19 @@ class CliTests(unittest.TestCase):
         with patch("cpu_fairness.experiment.sys.platform", "win32"):
             with self.assertRaisesRegex(ExperimentError, "Linux-only"):
                 run_smoke("configs/quick.json")
+
+    def test_fixed_nice_policy_selects_and_passes_batch_target(self):
+        target = _batch_nice_target({"type": "fixed_nice", "batch_nice": 5}, 0)
+        self.assertEqual(target, 5)
+        command = _batch_workload_command(
+            "5", 100_000, Path("results/batch.json"), Path("results/batch.ready.json"), target
+        )
+        self.assertEqual(command[-2:], ["--nice-value", "5"])
+
+    def test_baseline_inherits_runner_nice_and_fixed_nice_must_be_higher(self):
+        self.assertIsNone(_batch_nice_target({"type": "baseline"}, 0))
+        with self.assertRaisesRegex(ConfigError, "greater than the runner's nice value"):
+            _batch_nice_target({"type": "fixed_nice", "batch_nice": 5}, 5)
 
 
 if __name__ == "__main__":

@@ -61,6 +61,24 @@ The raw TSV columns are `timestamp_ns`, `event`, `tid`, `prev_tid`, `next_tid`, 
 
 Never edit the raw trace when reviewing or processing it. The trace clock is bpftrace `nsecs`; workload response latency uses `time.monotonic_ns`. The two clock domains are not subtracted from each other. The final censored endpoint is the most recent nominal 10 ms heartbeat from bpftrace; scheduling or tracing delays can make it older than one interval.
 
+## Fixed-nice pilot
+
+After reviewing a completed baseline smoke, the quick fixed-nice configuration runs the same workloads while setting only the batch worker to nice +5. It remains a short pilot, not a repeated comparison study. The runner records its inherited nice value, verifies that the interactive workload keeps that value, and verifies that the batch workload reaches the configured value. It rejects a target that is not higher than the runner's nice value.
+
+Validate the configuration first:
+
+    python3 -m cpu_fairness.cli validate-config configs/fixed_nice_quick.json
+
+Then run it in the Ubuntu guest as the normal user, with the tracer as the only privileged process:
+
+    sudo -v
+    set -o pipefail
+    python3 -m cpu_fairness.cli smoke \
+      --config configs/fixed_nice_quick.json \
+      --output-root results | tee /tmp/cpu-fairness-fixed-nice-smoke.json
+
+Expect status completed, a batch process nice value of 5, and an interactive nice value matching policy_application.runner_nice_value. Preserve each run's unique raw and processed output. This pilot does not calculate response-time percentiles or establish a policy effect; those comparisons need a later analysis step and repeated sequential runs.
+
 ## Output to return for Windows-side review
 
 Copy the `run_id` from the CLI output and substitute it below. Send the complete preflight JSON, smoke CLI output, manifest, collector stderr, analysis summary, and a small raw trace sample. Do not send the entire trace unless requested.

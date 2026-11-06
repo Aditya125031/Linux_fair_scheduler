@@ -2,7 +2,7 @@
 
 This repository studies runnable delay, interactive response latency, and CPU service fairness under mixed interactive and batch workloads. The Windows checkout is the development environment. Real scheduler tracing and experiments are run separately in the Ubuntu KVM guest; a Windows test cannot validate eBPF or Linux scheduler behavior.
 
-The first end-to-end smoke path is implemented: Linux preflight, single-process interactive and batch workloads, a bpftrace collector, raw event parsing, and initial runnable-wait/CPU-service reconstruction. Portable pieces are tested on Windows. The Linux collector and smoke runner have not yet been executed in the Ubuntu guest.
+The baseline end-to-end smoke path has completed once in the Ubuntu KVM guest, including preflight, the bpftrace collector, both workloads, and wait/service reconstruction. The runner now also supports a fixed-nice pilot that sets the batch worker to a configured nice value while leaving the interactive workload unchanged. That policy still needs validation in the guest; one successful smoke is not a repeated policy study.
 
 ## Current setup
 

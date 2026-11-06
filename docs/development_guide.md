@@ -49,4 +49,4 @@ Run these checks inside the Ubuntu guest before treating the smoke path as valid
 4. Validate real task IDs, event ordering/loss, runnable-wait reconstruction, and CPU-service estimates.
 5. Preserve the output files and return the preflight JSON, run manifest, bpftrace stderr, processed analysis summary, and a short raw trace sample. Keep this run sequential and inspect free disk before considering later experiments.
 
-The preflight, collector, workloads, and smoke runner are implemented but remain unvalidated on Linux until the checklist in `reproduction_guide.md` is run inside the Ubuntu guest. The team's previous manual `sched_wakeup` smoke test is user-reported environment evidence, not a test of this implementation.
+The user reported a completed baseline smoke in the Ubuntu guest on 2026-11-06, including successful preflight, collector start/stop, both workloads, and wait reconstruction. This is one baseline integration run, not a policy comparison or repeated experiment. The fixed-nice code is unit-tested in the development environment but still requires an actual guest run to verify Linux nice behavior and the policy comparison path.
