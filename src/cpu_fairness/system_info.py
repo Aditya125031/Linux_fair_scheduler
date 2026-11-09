@@ -47,45 +47,60 @@ def _memory_bytes() -> tuple[int | None, int | None]:
     return None, None
 
 
-def _cgroup_cpu_quota() -> dict[str, Any]:
+def _cgroup_cpu_quota(
+    membership_file: Path = Path("/proc/self/cgroup"),
+    cgroup_root: Path = Path("/sys/fs/cgroup"),
+) -> dict[str, Any]:
     """Read the current cgroup v2 CPU quota without changing system state."""
     try:
-        membership = Path("/proc/self/cgroup").read_text(encoding="utf-8")
+        membership = membership_file.read_text(encoding="utf-8")
         cgroup_path = next(
             (line.split("::", 1)[1] for line in membership.splitlines() if "::" in line),
             None,
         )
         if cgroup_path is None:
             return {"status": "unknown", "reason": "cgroup v2 membership was not found"}
-        cgroup_root = Path("/sys/fs/cgroup").resolve()
+        cgroup_root = cgroup_root.resolve()
         cgroup_dir = (cgroup_root / cgroup_path.lstrip("/")).resolve()
         if cgroup_dir != cgroup_root and cgroup_root not in cgroup_dir.parents:
             return {"status": "unknown", "reason": "cgroup path is outside the cgroup v2 mount"}
         current = cgroup_dir
+        checked_cpu_max = 0
+        last_period_us: int | None = None
         while True:
-            quota_text = (current / "cpu.max").read_text(encoding="ascii").split()
-            if len(quota_text) != 2:
-                return {"status": "unknown", "reason": "cpu.max has an unexpected format"}
-            period_us = int(quota_text[1])
-            if period_us <= 0:
-                return {"status": "unknown", "reason": "cpu.max period is invalid"}
-            if quota_text[0] != "max":
-                quota_us = int(quota_text[0])
-                if quota_us <= 0:
-                    return {"status": "unknown", "reason": "cpu.max quota is invalid"}
-                return {
-                    "status": "limited",
-                    "quota_us": quota_us,
-                    "period_us": period_us,
-                    "cpu_equivalents": quota_us / period_us,
-                    "cgroup_path": str(current),
-                }
+            quota_path = current / "cpu.max"
+            try:
+                quota_text = quota_path.read_text(encoding="ascii").split()
+            except FileNotFoundError:
+                quota_text = None
+            if quota_text is not None:
+                checked_cpu_max += 1
+                if len(quota_text) != 2:
+                    return {"status": "unknown", "reason": "cpu.max has an unexpected format"}
+                period_us = int(quota_text[1])
+                if period_us <= 0:
+                    return {"status": "unknown", "reason": "cpu.max period is invalid"}
+                last_period_us = period_us
+                if quota_text[0] != "max":
+                    quota_us = int(quota_text[0])
+                    if quota_us <= 0:
+                        return {"status": "unknown", "reason": "cpu.max quota is invalid"}
+                    return {
+                        "status": "limited",
+                        "quota_us": quota_us,
+                        "period_us": period_us,
+                        "cpu_equivalents": quota_us / period_us,
+                        "cgroup_path": str(current),
+                    }
             if current == cgroup_root:
+                if checked_cpu_max == 0:
+                    return {"status": "unknown", "reason": "cpu.max was not found in the cgroup hierarchy"}
                 return {
                     "status": "unlimited",
                     "quota_us": None,
-                    "period_us": period_us,
+                    "period_us": last_period_us,
                     "checked_ancestors": True,
+                    "checked_cgroup_count": checked_cpu_max,
                 }
             current = current.parent
     except (OSError, StopIteration, ValueError) as exc:

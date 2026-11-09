@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from cpu_fairness.system_info import collect_system_info
+from cpu_fairness.system_info import _cgroup_cpu_quota, collect_system_info
 
 
 class SystemInfoTests(unittest.TestCase):
@@ -27,6 +27,36 @@ class SystemInfoTests(unittest.TestCase):
             info = collect_system_info(target)
             self.assertFalse(info["output_dir_exists"])
             self.assertFalse(target.exists())
+
+    def test_cpu_quota_check_walks_up_when_leaf_has_no_cpu_max(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "cgroup"
+            leaf = root / "user.slice" / "user-1000.slice" / "session.scope"
+            leaf.mkdir(parents=True)
+            (root / "cpu.max").write_text("max 100000\n", encoding="ascii")
+            (root / "user.slice" / "cpu.max").write_text("max 100000\n", encoding="ascii")
+            membership = Path(directory) / "self.cgroup"
+            membership.write_text("0::/user.slice/user-1000.slice/session.scope\n", encoding="utf-8")
+
+            result = _cgroup_cpu_quota(membership, root)
+
+        self.assertEqual(result["status"], "unlimited")
+        self.assertEqual(result["checked_cgroup_count"], 2)
+
+    def test_cpu_quota_check_detects_a_limited_ancestor(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "cgroup"
+            leaf = root / "user.slice" / "user-1000.slice" / "session.scope"
+            leaf.mkdir(parents=True)
+            (root / "cpu.max").write_text("max 100000\n", encoding="ascii")
+            (root / "user.slice" / "cpu.max").write_text("50000 100000\n", encoding="ascii")
+            membership = Path(directory) / "self.cgroup"
+            membership.write_text("0::/user.slice/user-1000.slice/session.scope\n", encoding="utf-8")
+
+            result = _cgroup_cpu_quota(membership, root)
+
+        self.assertEqual(result["status"], "limited")
+        self.assertEqual(result["cpu_equivalents"], 0.5)
 
 
 if __name__ == "__main__":
