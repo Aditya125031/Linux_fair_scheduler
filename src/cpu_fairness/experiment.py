@@ -400,3 +400,42 @@ def run_smoke(config_path: str | Path, output_root: str | Path = "results") -> d
         manifest["errors"].append(failure)
     _write_json(manifest_path, manifest)
     return manifest
+
+
+def run_pilot(
+    repeats: int = 3,
+    output_root: str | Path = "results",
+    baseline_config: str | Path = "configs/quick.json",
+    fixed_nice_config: str | Path = "configs/fixed_nice_quick.json",
+) -> dict[str, Any]:
+    """Run a small sequential baseline/fixed-nice pilot; stop on first failed run."""
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or not 1 <= repeats <= 5:
+        raise ConfigError("pilot repeats must be an integer from 1 through 5")
+    run_records: list[dict[str, Any]] = []
+    for repetition in range(1, repeats + 1):
+        for policy, config_path in (
+            ("baseline", baseline_config),
+            ("fixed_nice", fixed_nice_config),
+        ):
+            manifest = run_smoke(config_path, output_root)
+            record = {
+                "repetition": repetition,
+                "policy": policy,
+                "run_id": manifest.get("run_id"),
+                "status": manifest.get("status"),
+            }
+            run_records.append(record)
+            if manifest.get("status") != "completed":
+                return {
+                    "data_kind": "measured_pilot_runs",
+                    "status": "failed",
+                    "repeats_requested": repeats,
+                    "runs": run_records,
+                    "error": f"stopping after failed {policy} run in repetition {repetition}",
+                }
+    return {
+        "data_kind": "measured_pilot_runs",
+        "status": "completed",
+        "repeats_requested": repeats,
+        "runs": run_records,
+    }

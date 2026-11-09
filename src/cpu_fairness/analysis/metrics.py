@@ -75,7 +75,9 @@ def _manifest_output(manifest: dict[str, Any], key: str, fallback: Path) -> Path
     return Path(value) if isinstance(value, str) else fallback
 
 
-def analyze_run(run_directory: str | Path) -> dict[str, Any]:
+def analyze_run(
+    run_directory: str | Path, include_delta_windows: bool = False
+) -> dict[str, Any]:
     """Summarize one completed raw run without changing its files."""
     run_path = Path(run_directory).expanduser().resolve()
     manifest = _read_json_object(run_path / "manifest.json", "run manifest")
@@ -267,6 +269,12 @@ def analyze_run(run_directory: str | Path) -> dict[str, Any]:
                 trace_end_ns if trace_end_ns is not None else -1,
                 environment.get("effective_cpu_count"),
             )
+            if delta_fairness.get("status") == "available":
+                if include_delta_windows:
+                    delta_fairness["windows_included"] = True
+                else:
+                    delta_fairness.pop("windows", None)
+                    delta_fairness["windows_included"] = False
         except (OSError, ValueError) as exc:
             delta_fairness = {
                 "status": "unavailable",

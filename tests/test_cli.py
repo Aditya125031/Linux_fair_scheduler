@@ -11,6 +11,7 @@ from cpu_fairness.experiment import (
     ExperimentError,
     _batch_nice_target,
     _batch_workload_command,
+    run_pilot,
     run_smoke,
 )
 from cpu_fairness.config import ConfigError
@@ -71,6 +72,23 @@ class CliTests(unittest.TestCase):
         self.assertIsNone(_batch_nice_target({"type": "baseline"}, 0))
         with self.assertRaisesRegex(ConfigError, "greater than the runner's nice value"):
             _batch_nice_target({"type": "fixed_nice", "batch_nice": 5}, 5)
+
+    def test_pilot_runs_policies_sequentially_and_stops_after_failure(self):
+        responses = [
+            {"run_id": "base-1", "status": "completed"},
+            {"run_id": "nice-1", "status": "completed"},
+            {"run_id": "base-2", "status": "failed"},
+        ]
+        with patch("cpu_fairness.experiment.run_smoke", side_effect=responses) as run:
+            result = run_pilot(repeats=3)
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual([row["policy"] for row in result["runs"]], ["baseline", "fixed_nice", "baseline"])
+        self.assertEqual(run.call_count, 3)
+
+    def test_pilot_repeat_count_is_bounded(self):
+        with self.assertRaisesRegex(ConfigError, "from 1 through 5"):
+            run_pilot(repeats=6)
 
 
 if __name__ == "__main__":

@@ -147,15 +147,19 @@ class RunMetricsTests(unittest.TestCase):
 
     def test_analyze_run_computes_delta_windows_from_trace_and_manifest(self):
         with TemporaryDirectory() as directory:
-            result = analyze_run(
-                self._write_run(Path(directory), with_delta_trace=True)
-            )
+            run_path = self._write_run(Path(directory), with_delta_trace=True)
+            result = analyze_run(run_path)
+            detailed = analyze_run(run_path, include_delta_windows=True)
 
         delta = result["delta_fairness"]
         self.assertEqual(delta["status"], "available")
+        self.assertFalse(delta["windows_included"])
+        self.assertNotIn("windows", delta)
         self.assertEqual(delta["window_counts"]["with_both_classes"], 2)
         self.assertEqual(delta["delta_batch_to_interactive"]["maximum"], 1.0)
         self.assertEqual(delta["delta_interactive_to_batch"]["maximum"], 1.0)
+        self.assertTrue(detailed["delta_fairness"]["windows_included"])
+        self.assertEqual(len(detailed["delta_fairness"]["windows"]), 2)
 
     def test_delta_is_withheld_when_cgroup_cpu_quota_is_limited(self):
         with TemporaryDirectory() as directory:

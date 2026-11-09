@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "interactive_wait_threshold_ns": 1000000,
+  "batch_aging_wait_threshold_ns": 10000000,
+  "boost_step": 1,
+  "aging_step": 1,
+  "maximum_boost_level": 3,
+  "maximum_aging_level": 3,
+  "cooldown_windows": 2
+}

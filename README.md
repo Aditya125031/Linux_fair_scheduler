@@ -2,7 +2,7 @@
 
 This repository records approximate user-space interactive response time, request turnaround, runnable delay, per-task CPU service, and trace-window Delta (Δ) / partitioned ΔB→I fairness values under mixed interactive and batch workloads. Delta values are emitted only when the run includes verified scheduler-policy and CPU-capacity metadata. The Windows checkout is the development environment. Real scheduler tracing and experiments are run separately in the Ubuntu KVM guest; a Windows test cannot validate eBPF or Linux scheduler behavior.
 
-The baseline and one fixed-nice pilot have completed in the Ubuntu KVM guest, including preflight, the bpftrace collector, both workloads, and wait/service reconstruction. The fixed-nice run verified batch nice +5 while interactive remained at nice 0. Per-run latency, throughput, wait, and service summaries are available; repeated runs and aggregation are still needed before drawing policy conclusions.
+The Ubuntu KVM guest has completed smoke runs, including a user-reported run where Delta was available for 110 post-warmup windows (95 containing both workload classes). This does not validate the current repeated-run tooling or establish policy effects. Portable code now includes a sequential baseline/fixed-nice pilot, run-level aggregation, optional measured-run plots, and an offline wait-aware simulator. Run the pilot and analysis in the Ubuntu guest before drawing conclusions; see [the reproduction guide](docs/reproduction_guide.md).
 
 ## Current setup
 
@@ -43,14 +43,20 @@ The Linux-only commands are:
 ```bash
 python3 -m cpu_fairness.cli preflight --json
 python3 -m cpu_fairness.cli smoke --config configs/quick.json --output-root results
+python3 -m cpu_fairness.cli run-pilot --repeats 3 --output-root results
 python3 -m cpu_fairness.cli analyze-run results/raw/PASTE_RUN_ID
+python3 -m cpu_fairness.cli aggregate-runs results/raw/RUN_1 results/raw/RUN_2
+python3 -m cpu_fairness.cli plot-runs results/raw/RUN_1 results/raw/RUN_2
+python3 -m cpu_fairness.cli simulate-run results/raw/PASTE_RUN_ID
 ```
+
+`run-pilot` collects sequential baseline/fixed-nice pairs and stops on the first failed run. `aggregate-runs` requires matching workload settings and reports run-level summaries with bootstrap confidence intervals; one run is insufficient for an interval. `plot-runs` uses the optional analysis dependencies and writes a measured-only PNG, failing if it would overwrite a file. `simulate-run` writes a separate hypothetical decision log under that run's processed directory and never changes scheduler settings or reports simulated performance outcomes.
 
 Use these only in the Ubuntu guest. Follow [docs/reproduction_guide.md](docs/reproduction_guide.md) for setup and the validation checklist.
 
 ## Dependencies
 
-The core foundation uses only the Python standard library. `requirements.txt` installs the project in editable mode and adds pytest for tests. The optional `analysis` extra in `pyproject.toml` lists NumPy, Pandas, and Matplotlib for a later analysis milestone; those packages are not needed for the current foundation. Check the target guest's Python/package compatibility before installing them there.
+The core runner and trace analysis use the Python standard library. `requirements.txt` installs the project in editable mode and adds pytest for tests. The optional `analysis` extra in `pyproject.toml` provides Matplotlib for plots. Check target guest compatibility before installing it; plotting is optional and does not affect measurement collection.
 
 ## Project layout
 

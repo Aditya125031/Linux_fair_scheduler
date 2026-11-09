@@ -79,6 +79,38 @@ Then run it in the Ubuntu guest as the normal user, with the tracer as the only 
 
 Expect status completed, a batch process nice value of 5, and an interactive nice value matching policy_application.runner_nice_value. Preserve each run's unique raw and processed output. This pilot does not calculate response-time percentiles or establish a policy effect; those comparisons need a later analysis step and repeated sequential runs.
 
+## Sequential repeated-run pilot
+
+After one baseline and one fixed-nice smoke have completed successfully, use the bounded pilot command to collect up to five baseline/fixed-nice pairs sequentially. It stops on the first failed run and leaves every completed run in its own unique directory. Do not run it concurrently with another experiment.
+
+```bash
+sudo -v
+set -o pipefail
+python3 -m cpu_fairness.cli run-pilot \
+  --repeats 3 \
+  --output-root results | tee /tmp/cpu-fairness-pilot.json
+```
+
+Copy the six run IDs from the JSON output and compare them:
+
+```bash
+python3 -m cpu_fairness.cli aggregate-runs \
+  results/raw/BASELINE_RUN_1 results/raw/FIXED_NICE_RUN_1 \
+  results/raw/BASELINE_RUN_2 results/raw/FIXED_NICE_RUN_2 \
+  results/raw/BASELINE_RUN_3 results/raw/FIXED_NICE_RUN_3
+```
+
+Aggregation rejects mismatched workload and policy settings, reports run-level means/medians and deterministic bootstrap intervals, and makes no significance claim. Plotting is optional and needs Matplotlib. The simulator reads a completed run and writes hypothetical decisions only:
+
+```bash
+python3 -m cpu_fairness.cli plot-runs \
+  results/raw/BASELINE_RUN_1 results/raw/FIXED_NICE_RUN_1 \
+  --output results/figures/pilot-comparison.png
+python3 -m cpu_fairness.cli simulate-run results/raw/BASELINE_RUN_1
+```
+
+Both output paths fail rather than overwrite existing files. The simulator does not run as root and does not alter the live scheduler.
+
 ## Output to return for Windows-side review
 
 Copy the `run_id` from the CLI output and substitute it below. Send the complete preflight JSON, smoke CLI output, manifest, collector stderr, analysis summary, and a small raw trace sample. Do not send the entire trace unless requested.
@@ -99,6 +131,8 @@ Interactive request timing is defined as follows:
 The analyzer derives both corrected timings from the three preserved monotonic timestamps and checks any explicit corrected fields against those timestamps. Older logs called release-to-completion `response_latency_ns`; the analyzer identifies that legacy field separately, does not use it for corrected metrics, and leaves raw results unchanged. The Delta (Δ) and partitioned ΔB→I calculation is a separate scheduler-clock analysis, distinct from the application request timings.
 
 The per-window Delta output uses only scheduler-clock service and runnable-wait intervals. It omits the initial warm-up window and final partial window, uses the run's CPU affinity and verified `SCHED_OTHER` nice weights, and requires an explicitly unlimited cgroup v2 CPU quota. It reports both directional class deficits only in windows containing active tasks from both classes, without threshold-triggered policy decisions. See [metric definitions](metric_definitions.md) for the equations and current limits. Runs created before scheduler policy, CPU-affinity, and cgroup-quota metadata were added will report Delta as unavailable; their raw files remain usable for the existing metrics.
+
+The default `analyze-run` output includes compact Delta summaries. Add `--include-delta-windows` only when you need the full per-window task records.
 
 ```bash
 cat /tmp/cpu-fairness-preflight.json

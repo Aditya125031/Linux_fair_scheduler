@@ -8,7 +8,7 @@
 - Preserve raw traces separately from parsed/processed output. Record environment, configuration, PIDs, exit statuses, warnings, and incomplete/lost-data indicators. Never fabricate measurements, plots, citations, or policy outcomes.
 - Agree on event schema, monotonic timestamp units, PID identity, workload log schema, and metric definitions before parallel module work. Use numeric task IDs; document PID reuse/thread-vs-process limitations.
 - Reconstruct runnable waits after wakeup and runnable preemption; handle duplicates, exits, unfinished intervals, ordering, and malformed events explicitly. Keep scheduler-reported `sched_stat_wait` separate as a validation source.
-- Calculate Jain fairness only over comparable equal-demand workers. Keep simulated decisions distinct from measured results. Label sample fixtures as synthetic.
+- Use the project-defined capacity-normalized Delta and directional partitioned Delta metrics for measured fairness. Keep simulated decisions distinct from measured results. Label sample fixtures as synthetic.
 - Keep workloads deterministic/configurable and lightweight. Run experiments sequentially on the two-vCPU guest; pilot before any larger matrix.
 - Use Python standard library where practical and verify third-party dependency support on the target Python before pinning/installing. Do not replace system Python.
 - Make changes in small reviewable steps. Do not claim a check passed unless it was actually run; distinguish portable checks from Ubuntu guest integration checks.

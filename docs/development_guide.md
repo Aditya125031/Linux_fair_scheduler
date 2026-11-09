@@ -37,7 +37,7 @@ The current tests cover configuration and CLI behavior, workload log records, tr
 
 ## Configuration contract
 
-The initial config uses `schema_version: 1` and has an experiment ID, positive duration, interactive arrival interval and burst size, batch worker count and unit size, and a policy. Supported policy types in this foundation are `baseline` and `fixed_nice`; the latter accepts batch nice values from 0 through 19. Validation does not launch or alter any process. The wait-aware simulator will use a separate configuration and produce simulated decisions only.
+The experiment config uses `schema_version: 1` and has an experiment ID, positive duration, interactive arrival interval and burst size, batch worker count and unit size, and a policy. Supported measured policies are `baseline` and `fixed_nice`; the latter accepts batch nice values from 0 through 19. Validation does not launch or alter any process. The bounded wait-aware simulator is separate and produces simulated decisions only.
 
 ## Linux-only validation still required
 
@@ -49,4 +49,6 @@ Run these checks inside the Ubuntu guest before treating the smoke path as valid
 4. Validate real task IDs, event ordering/loss, runnable-wait reconstruction, and CPU-service estimates.
 5. Preserve the output files and return the preflight JSON, run manifest, bpftrace stderr, processed analysis summary, and a short raw trace sample. Keep this run sequential and inspect free disk before considering later experiments.
 
-The user reported completed baseline and fixed-nice smoke runs in the Ubuntu guest on 2026-11-06. The fixed-nice manifest verified runner and interactive nice 0 and batch nice 5. These are pilot runs, not a repeated policy comparison. The per-run analysis command is portable code; repeated aggregation and conclusions still require additional runs and analysis.
+The user reported successful guest smoke runs and, on 2026-11-09, a run whose Delta analysis was available for 110 post-warmup windows (95 containing both workload classes). That is a smoke result, not a repeated policy comparison. Portable tooling now includes bounded sequential A/B pilot collection, run-level aggregation, optional plots, and an offline wait-aware simulator. Repeated guest runs are still needed for meaningful comparisons; no KVM validation of those new features is claimed.
+
+Run `python -m cpu_fairness.cli --help` for the current CLI. `run-pilot --repeats 3` runs baseline and fixed-nice sequentially; `aggregate-runs` checks compatible workload and policy settings and summarizes run-level metrics; `plot-runs` requires the optional plotting extra; `simulate-run` writes separately labelled hypothetical decisions and never changes Linux scheduling. See the reproduction guide for guest commands.
