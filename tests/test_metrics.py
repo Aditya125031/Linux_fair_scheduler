@@ -7,16 +7,31 @@ from cpu_fairness.analysis.metrics import AnalysisError, analyze_run, nearest_ra
 
 
 class RunMetricsTests(unittest.TestCase):
-    def _write_run(self, root: Path, status: str = "completed") -> Path:
+    def _write_run(
+        self, root: Path, status: str = "completed", legacy_timing: bool = False
+    ) -> Path:
         raw = root / "raw" / "test-run"
         processed = root / "processed" / "test-run"
         raw.mkdir(parents=True)
         processed.mkdir(parents=True)
+        interactive_rows = []
+        for value in [10, 20, 30, 40, 50]:
+            release = 1_000
+            execution_start = release + value
+            completion = release + value + 100
+            row = {
+                "intended_release_monotonic_ns": release,
+                "execution_start_monotonic_ns": execution_start,
+                "completion_monotonic_ns": completion,
+            }
+            if legacy_timing:
+                row["response_latency_ns"] = completion - release
+            else:
+                row["approx_response_time_ns"] = execution_start - release
+                row["turnaround_time_ns"] = completion - release
+            interactive_rows.append(row)
         (raw / "interactive.jsonl").write_text(
-            "".join(
-                json.dumps({"response_latency_ns": value}) + "\n"
-                for value in [10, 20, 30, 40, 50]
-            ),
+            "".join(json.dumps(row) + "\n" for row in interactive_rows),
             encoding="utf-8",
         )
         (raw / "batch.json").write_text(
@@ -70,15 +85,25 @@ class RunMetricsTests(unittest.TestCase):
         (raw / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return raw
 
-    def test_analyzes_latency_wait_service_and_batch_throughput_separately(self):
+    def test_analyzes_response_turnaround_wait_service_and_throughput_separately(self):
         with TemporaryDirectory() as directory:
             result = analyze_run(self._write_run(Path(directory)))
 
         self.assertEqual(result["policy"], "fixed_nice")
         self.assertEqual(
-            result["interactive"]["response_latency"],
+            result["interactive"]["approx_response_time"],
             {"sample_count": 5, "method": "nearest_rank", "p50_ns": 30, "p95_ns": 50},
         )
+        self.assertEqual(
+            result["interactive"]["turnaround_time"],
+            {"sample_count": 5, "method": "nearest_rank", "p50_ns": 130, "p95_ns": 150},
+        )
+        self.assertNotEqual(
+            result["interactive"]["approx_response_time"]["p50_ns"],
+            result["interactive"]["turnaround_time"]["p50_ns"],
+        )
+        self.assertEqual(result["interactive_timing_schema"], "corrected_explicit_fields")
+        self.assertFalse(result["interactive"]["per_request_cpu_service_time"]["available"])
         self.assertEqual(result["interactive"]["runnable_wait"]["p50_ns"], 200)
         self.assertEqual(result["interactive"]["runnable_wait"]["censored_sample_count"], 1)
         self.assertEqual(result["interactive"]["cpu_service_ns"], 1500)
@@ -87,6 +112,68 @@ class RunMetricsTests(unittest.TestCase):
         self.assertEqual(result["batch"]["throughput_units_per_second"], 5.0)
         self.assertEqual(result["scheduler_event_counts"]["all_trace_records"], 99)
         self.assertFalse(result["metric_definitions"]["clock_domains_subtracted"])
+
+    def test_legacy_latency_is_labeled_and_not_used_for_corrected_metrics(self):
+        with TemporaryDirectory() as directory:
+            result = analyze_run(self._write_run(Path(directory), legacy_timing=True))
+
+        self.assertEqual(
+            result["interactive"]["approx_response_time"]["p50_ns"], 30
+        )
+        self.assertEqual(result["interactive"]["turnaround_time"]["p50_ns"], 130)
+        self.assertEqual(
+            result["interactive_timing_schema"], "legacy_field_timestamp_derived"
+        )
+        legacy = result["legacy_ambiguous_response_latency"]
+        self.assertEqual(legacy["field_name"], "response_latency_ns")
+        self.assertEqual(legacy["summary"]["p50_ns"], 130)
+        self.assertFalse(legacy["used_for_corrected_metrics"])
+
+    def test_rejects_missing_or_invalid_interactive_timestamps(self):
+        for replacement, message in (
+            ({"execution_start_monotonic_ns": None}, "execution_start_monotonic_ns"),
+            ({"completion_monotonic_ns": -1}, "completion_monotonic_ns"),
+            ({"execution_start_monotonic_ns": 999}, "timestamps must satisfy"),
+        ):
+            with self.subTest(replacement=replacement), TemporaryDirectory() as directory:
+                raw = self._write_run(Path(directory))
+                records = [
+                    json.loads(line)
+                    for line in (raw / "interactive.jsonl").read_text().splitlines()
+                ]
+                records[0].update(replacement)
+                (raw / "interactive.jsonl").write_text(
+                    "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8"
+                )
+                with self.assertRaisesRegex(AnalysisError, message):
+                    analyze_run(raw)
+
+        with TemporaryDirectory() as directory:
+            raw = self._write_run(Path(directory))
+            records = [
+                json.loads(line)
+                for line in (raw / "interactive.jsonl").read_text().splitlines()
+            ]
+            del records[0]["execution_start_monotonic_ns"]
+            (raw / "interactive.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(AnalysisError, "execution_start_monotonic_ns"):
+                analyze_run(raw)
+
+    def test_rejects_corrected_metric_that_disagrees_with_timestamps(self):
+        with TemporaryDirectory() as directory:
+            raw = self._write_run(Path(directory))
+            records = [
+                json.loads(line)
+                for line in (raw / "interactive.jsonl").read_text().splitlines()
+            ]
+            records[0]["approx_response_time_ns"] = 999
+            (raw / "interactive.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(AnalysisError, "does not match its source timestamps"):
+                analyze_run(raw)
 
     def test_nearest_rank_reports_empty_sample_count_without_inventing_values(self):
         self.assertEqual(

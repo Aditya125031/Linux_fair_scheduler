@@ -88,7 +88,15 @@ Print the per-run metrics summary without modifying the raw or processed artifac
     RUN_ID='paste-run-id-here'
     python3 -m cpu_fairness.cli analyze-run "results/raw/$RUN_ID"
 
-The summary reports response-latency p50/p95 and sample count, batch throughput, and per-TID runnable-wait and CPU-service summaries. Percentiles use nearest-rank. Application response latency and scheduler wait use separate clock domains and are not combined.
+The summary reports approximate response-time and turnaround p50/p95 and sample counts, batch throughput, and per-TID runnable-wait and CPU-service summaries. Percentiles use nearest-rank. Application timing and scheduler wait use separate clock domains and are not combined.
+
+Interactive request timing is defined as follows:
+
+- `approx_response_time_ns` is the recorded first user-space execution-start timestamp minus the intended release timestamp. It is an approximate user-space response-time measure, not the exact time the kernel first scheduled the task.
+- `turnaround_time_ns` is completion minus intended release.
+- Per-request CPU service time is not currently measured. Scheduler-derived CPU service is reported per TID and must not be treated as a request's service time.
+
+The analyzer derives both corrected timings from the three preserved monotonic timestamps and checks any explicit corrected fields against those timestamps. Older logs called release-to-completion `response_latency_ns`; the analyzer identifies that legacy field separately, does not use it for corrected metrics, and leaves raw results unchanged. The Delta (Δ) and partitioned ΔB→I fairness calculation is a separate project metric and is not computed by `analyze-run`.
 
 ```bash
 cat /tmp/cpu-fairness-preflight.json

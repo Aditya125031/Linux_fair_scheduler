@@ -36,6 +36,28 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def request_timing_metrics(
+    intended_release_ns: int,
+    execution_start_ns: int,
+    completion_ns: int,
+) -> dict[str, int]:
+    """Return user-space response-time estimate and turnaround in one clock domain."""
+    timestamps = {
+        "intended_release_ns": intended_release_ns,
+        "execution_start_ns": execution_start_ns,
+        "completion_ns": completion_ns,
+    }
+    for name, value in timestamps.items():
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{name} must be a nonnegative integer")
+    if not intended_release_ns <= execution_start_ns <= completion_ns:
+        raise ValueError("timestamps must satisfy release <= execution start <= completion")
+    return {
+        "approx_response_time_ns": execution_start_ns - intended_release_ns,
+        "turnaround_time_ns": completion_ns - intended_release_ns,
+    }
+
+
 def run_interactive(
     duration_seconds: float,
     arrival_interval_ms: float,
@@ -76,6 +98,9 @@ def run_interactive(
         for value in range(burst_iterations):
             checksum = (checksum + value * value) & 0xFFFFFFFF
         completion_ns = time.monotonic_ns()
+        timing_metrics = request_timing_metrics(
+            intended_release_ns, execution_start_ns, completion_ns
+        )
         request_id += 1
         records.append(
             {
@@ -83,7 +108,7 @@ def run_interactive(
                 "intended_release_monotonic_ns": intended_release_ns,
                 "execution_start_monotonic_ns": execution_start_ns,
                 "completion_monotonic_ns": completion_ns,
-                "response_latency_ns": completion_ns - intended_release_ns,
+                **timing_metrics,
                 "burst_iterations": burst_iterations,
                 "arrival_interval_ms": arrival_interval_ms,
                 "duration_seconds": duration_seconds,

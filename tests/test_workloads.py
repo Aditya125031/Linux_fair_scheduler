@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from cpu_fairness.workloads.batch_worker import _set_nice_value, run_batch
-from cpu_fairness.workloads.interactive import run_interactive
+from cpu_fairness.workloads.interactive import request_timing_metrics, run_interactive
 
 
 class WorkloadTests(unittest.TestCase):
@@ -21,7 +21,29 @@ class WorkloadTests(unittest.TestCase):
                 rows[0]["intended_release_monotonic_ns"],
                 rows[0]["execution_start_monotonic_ns"],
             )
-            self.assertIn("response_latency_ns", rows[0])
+            self.assertEqual(
+                rows[0]["approx_response_time_ns"],
+                rows[0]["execution_start_monotonic_ns"]
+                - rows[0]["intended_release_monotonic_ns"],
+            )
+            self.assertEqual(
+                rows[0]["turnaround_time_ns"],
+                rows[0]["completion_monotonic_ns"]
+                - rows[0]["intended_release_monotonic_ns"],
+            )
+            self.assertNotIn("response_latency_ns", rows[0])
+
+    def test_interactive_timing_metrics_use_deterministic_timestamps(self):
+        self.assertEqual(
+            request_timing_metrics(100, 125, 180),
+            {"approx_response_time_ns": 25, "turnaround_time_ns": 80},
+        )
+
+    def test_interactive_timing_metrics_reject_invalid_timestamps(self):
+        for timestamps in ((True, 125, 180), (-1, 125, 180), (100, 99, 180), (100, 125, 124)):
+            with self.subTest(timestamps=timestamps):
+                with self.assertRaises(ValueError):
+                    request_timing_metrics(*timestamps)
 
     def test_batch_workload_emits_structured_summary(self):
         with TemporaryDirectory() as directory:

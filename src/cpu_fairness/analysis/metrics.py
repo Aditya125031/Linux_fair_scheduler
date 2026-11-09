@@ -103,10 +103,62 @@ def analyze_run(run_directory: str | Path) -> dict[str, Any]:
     )
     batch_path = _manifest_output(manifest, "batch_summary", run_path / "batch.json")
     interactive_records = _read_jsonl_objects(interactive_path, "interactive workload log")
-    response_latencies = [
-        _required_nonnegative_integer(record, "response_latency_ns", "interactive record")
-        for record in interactive_records
-    ]
+    if not interactive_records:
+        raise AnalysisError("interactive workload log contains no request records")
+    approximate_response_times: list[int] = []
+    turnaround_times: list[int] = []
+    legacy_latency_values: list[int] = []
+    timing_schemas: set[str] = set()
+    for index, record in enumerate(interactive_records, start=1):
+        label = f"interactive record line {index}"
+        release_ns = _required_nonnegative_integer(
+            record, "intended_release_monotonic_ns", label
+        )
+        start_ns = _required_nonnegative_integer(
+            record, "execution_start_monotonic_ns", label
+        )
+        completion_ns = _required_nonnegative_integer(
+            record, "completion_monotonic_ns", label
+        )
+        if not release_ns <= start_ns <= completion_ns:
+            raise AnalysisError(
+                f"{label} timestamps must satisfy release <= execution start <= completion"
+            )
+        approximate_response_ns = start_ns - release_ns
+        turnaround_ns = completion_ns - release_ns
+
+        has_approx = "approx_response_time_ns" in record
+        has_turnaround = "turnaround_time_ns" in record
+        if has_approx != has_turnaround:
+            raise AnalysisError(
+                f"{label} must provide both approx_response_time_ns and turnaround_time_ns"
+            )
+        if has_approx:
+            recorded_response = _required_nonnegative_integer(
+                record, "approx_response_time_ns", label
+            )
+            recorded_turnaround = _required_nonnegative_integer(
+                record, "turnaround_time_ns", label
+            )
+            if recorded_response != approximate_response_ns:
+                raise AnalysisError(
+                    f"{label}.approx_response_time_ns does not match its source timestamps"
+                )
+            if recorded_turnaround != turnaround_ns:
+                raise AnalysisError(
+                    f"{label}.turnaround_time_ns does not match its source timestamps"
+                )
+            timing_schemas.add("corrected_explicit_fields")
+        else:
+            # Old records called release-to-completion response_latency_ns. Keep
+            # it visible as a legacy field, but derive corrected metrics only
+            # from the preserved source timestamps above.
+            legacy_latency_values.append(
+                _required_nonnegative_integer(record, "response_latency_ns", label)
+            )
+            timing_schemas.add("legacy_field_timestamp_derived")
+        approximate_response_times.append(approximate_response_ns)
+        turnaround_times.append(turnaround_ns)
     batch_record = _read_json_object(batch_path, "batch workload summary")
     completed_units = _required_nonnegative_integer(batch_record, "completed_units", "batch summary")
     elapsed_ns = batch_record.get("duration_monotonic_ns")
@@ -186,8 +238,26 @@ def analyze_run(run_directory: str | Path) -> dict[str, Any]:
         "policy_application": policy_application,
         "interactive": {
             **task_metrics(interactive_tid, "interactive"),
-            "response_latency": nearest_rank_summary(response_latencies),
+            "approx_response_time": nearest_rank_summary(approximate_response_times),
+            "turnaround_time": nearest_rank_summary(turnaround_times),
+            "per_request_cpu_service_time": {
+                "available": False,
+                "reason": "Current scheduler tracing reports CPU service per TID, not per interactive request.",
+            },
         },
+        "interactive_timing_schema": (
+            next(iter(timing_schemas)) if len(timing_schemas) == 1 else "mixed_legacy_and_corrected_records"
+        ),
+        "legacy_ambiguous_response_latency": (
+            {
+                "field_name": "response_latency_ns",
+                "summary": nearest_rank_summary(legacy_latency_values),
+                "used_for_corrected_metrics": False,
+                "note": "Legacy records used this name for release-to-completion; corrected metrics above are derived from the preserved timestamps.",
+            }
+            if legacy_latency_values
+            else None
+        ),
         "batch": {
             **task_metrics(batch_tid, "batch"),
             "completed_units": completed_units,
@@ -201,7 +271,9 @@ def analyze_run(run_directory: str | Path) -> dict[str, Any]:
         },
         "metric_definitions": {
             "percentiles": "nearest-rank; rank = ceil(p * sample_count), one-based",
-            "response_latency": "completion minus intended release; Python monotonic nanoseconds",
+            "approx_response_time": "execution-start timestamp minus intended-release timestamp; Python monotonic nanoseconds; approximate user-space observation, not the exact kernel first-scheduled time",
+            "turnaround_time": "completion timestamp minus intended-release timestamp; Python monotonic nanoseconds",
+            "per_request_cpu_service_time": "not measured; scheduler-derived CPU service is currently per TID and must not be substituted for per-request service",
             "runnable_wait": "bpftrace timestamp difference; complete episodes only; grouped by task TID",
             "cpu_service": "sum of observed sched_switch intervals in bpftrace nanoseconds",
             "batch_throughput": "completed units divided by batch elapsed monotonic seconds",
