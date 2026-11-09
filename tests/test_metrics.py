@@ -8,7 +8,11 @@ from cpu_fairness.analysis.metrics import AnalysisError, analyze_run, nearest_ra
 
 class RunMetricsTests(unittest.TestCase):
     def _write_run(
-        self, root: Path, status: str = "completed", legacy_timing: bool = False
+        self,
+        root: Path,
+        status: str = "completed",
+        legacy_timing: bool = False,
+        with_delta_trace: bool = False,
     ) -> Path:
         raw = root / "raw" / "test-run"
         processed = root / "processed" / "test-run"
@@ -69,8 +73,18 @@ class RunMetricsTests(unittest.TestCase):
             "status": status,
             "configuration": {"policy": {"type": "fixed_nice", "batch_nice": 5}},
             "processes": {
-                "interactive": {"tids": [101], "nice_value": 0},
-                "batch": {"tids": [202], "nice_value": 5},
+                "interactive": {
+                    "tids": [101], "nice_value": 0,
+                    "scheduler_policy": {"code": 0, "name": "SCHED_OTHER"},
+                },
+                "batch": {
+                    "tids": [202], "nice_value": 5,
+                    "scheduler_policy": {"code": 0, "name": "SCHED_OTHER"},
+                },
+            },
+            "environment": {
+                "effective_cpu_count": 1,
+                "cpu_quota": {"status": "unlimited", "quota_us": None, "period_us": 100000},
             },
             "policy_application": {"runner_nice_value": 0, "batch_nice_target": 5},
             "warnings": [],
@@ -82,6 +96,23 @@ class RunMetricsTests(unittest.TestCase):
                 "task_accounting": str(processed / "task_accounting.json"),
             },
         }
+        if with_delta_trace:
+            from cpu_fairness.telemetry.parser import EVENT_COLUMNS
+
+            trace_path = raw / "scheduler.tsv"
+            trace_path.write_text(
+                "\t".join(EVENT_COLUMNS)
+                + "\n"
+                + "0\tWAKEUP\t202\t-1\t-1\t-1\t120\t-1\t-1\t0\t0\n"
+                + "0\tWAKEUP\t101\t-1\t-1\t-1\t120\t-1\t-1\t0\t0\n"
+                + "1\tSWITCH\t-1\t0\t101\t0\t-1\t120\t120\t0\t-1\n"
+                + "50000000\tSWITCH\t-1\t101\t202\t0\t-1\t120\t120\t0\t-1\n"
+                + "100000000\tSWITCH\t-1\t202\t101\t0\t-1\t120\t120\t0\t-1\n"
+                + "150000000\tSWITCH\t-1\t101\t202\t0\t-1\t120\t120\t0\t-1\n"
+                + "160000000\tEND\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1\t-1\n",
+                encoding="utf-8",
+            )
+            manifest["outputs"]["raw_trace"] = str(trace_path)
         (raw / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return raw
 
@@ -112,6 +143,35 @@ class RunMetricsTests(unittest.TestCase):
         self.assertEqual(result["batch"]["throughput_units_per_second"], 5.0)
         self.assertEqual(result["scheduler_event_counts"]["all_trace_records"], 99)
         self.assertFalse(result["metric_definitions"]["clock_domains_subtracted"])
+        self.assertEqual(result["delta_fairness"]["status"], "unavailable")
+
+    def test_analyze_run_computes_delta_windows_from_trace_and_manifest(self):
+        with TemporaryDirectory() as directory:
+            result = analyze_run(
+                self._write_run(Path(directory), with_delta_trace=True)
+            )
+
+        delta = result["delta_fairness"]
+        self.assertEqual(delta["status"], "available")
+        self.assertEqual(delta["window_counts"]["with_both_classes"], 2)
+        self.assertEqual(delta["delta_batch_to_interactive"]["maximum"], 1.0)
+        self.assertEqual(delta["delta_interactive_to_batch"]["maximum"], 1.0)
+
+    def test_delta_is_withheld_when_cgroup_cpu_quota_is_limited(self):
+        with TemporaryDirectory() as directory:
+            raw = self._write_run(Path(directory), with_delta_trace=True)
+            manifest_path = raw / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["environment"]["cpu_quota"] = {
+                "status": "limited",
+                "quota_us": 50_000,
+                "period_us": 100_000,
+            }
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            result = analyze_run(raw)
+
+        self.assertEqual(result["delta_fairness"]["status"], "unavailable")
+        self.assertIn("unlimited cgroup CPU quota", result["delta_fairness"]["reason"])
 
     def test_legacy_latency_is_labeled_and_not_used_for_corrected_metrics(self):
         with TemporaryDirectory() as directory:

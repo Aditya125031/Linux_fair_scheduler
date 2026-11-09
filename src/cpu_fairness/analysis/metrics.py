@@ -7,6 +7,9 @@ import math
 from pathlib import Path
 from typing import Any
 
+from cpu_fairness.analysis.fairness import analyze_delta_windows
+from cpu_fairness.telemetry.parser import read_trace
+
 
 class AnalysisError(ValueError):
     """A completed run does not contain valid inputs for per-run analysis."""
@@ -231,6 +234,44 @@ def analyze_run(run_directory: str | Path) -> dict[str, Any]:
     event_counts = scheduler_analysis.get("event_counts", {})
     policy_application = manifest.get("policy_application", {})
     policy = configuration.get("policy", {})
+    trace_path = _manifest_output(manifest, "raw_trace", run_path / "scheduler.tsv")
+    environment = manifest.get("environment", {})
+    cpu_quota = environment.get("cpu_quota") if isinstance(environment, dict) else None
+    if not isinstance(cpu_quota, dict) or cpu_quota.get("status") != "unlimited":
+        delta_fairness = {
+            "status": "unavailable",
+            "reason": "run manifest does not verify an unlimited cgroup CPU quota",
+        }
+    else:
+        try:
+            trace_events, trace_end_ns = read_trace(trace_path)
+            task_metadata = {
+                interactive_tid: {
+                    "workload_class": "interactive",
+                    "nice_value": interactive.get("nice_value"),
+                    "scheduler_policy": (interactive.get("scheduler_policy") or {}).get("name")
+                    if isinstance(interactive.get("scheduler_policy"), dict)
+                    else None,
+                },
+                batch_tid: {
+                    "workload_class": "batch",
+                    "nice_value": batch.get("nice_value"),
+                    "scheduler_policy": (batch.get("scheduler_policy") or {}).get("name")
+                    if isinstance(batch.get("scheduler_policy"), dict)
+                    else None,
+                },
+            }
+            delta_fairness = analyze_delta_windows(
+                trace_events,
+                task_metadata,
+                trace_end_ns if trace_end_ns is not None else -1,
+                environment.get("effective_cpu_count"),
+            )
+        except (OSError, ValueError) as exc:
+            delta_fairness = {
+                "status": "unavailable",
+                "reason": f"cannot analyze scheduler trace for Delta windows: {exc}",
+            }
     return {
         "data_kind": "measured_run_metrics",
         "run_id": manifest.get("run_id", run_path.name),
@@ -265,6 +306,7 @@ def analyze_run(run_directory: str | Path) -> dict[str, Any]:
             "throughput_units_per_second": completed_units * 1_000_000_000 / elapsed_ns,
         },
         "scheduler_event_counts": event_counts,
+        "delta_fairness": delta_fairness,
         "warnings": {
             "manifest": manifest.get("warnings", []),
             "analysis": scheduler_analysis.get("warnings", []),

@@ -77,12 +77,29 @@ def _process_identity(pid: int, ready: dict[str, Any], role: str) -> dict[str, A
             f"{role} identity mismatch or workload is not single-threaded: "
             f"runner_pid={pid}, proc_tgid={tgid}, tids={tids}, ready={ready}"
         )
+    scheduler_policy: dict[str, int | str] | None = None
+    try:
+        policy_code = os.sched_getscheduler(pid)
+        policy_names = {
+            getattr(os, "SCHED_OTHER", 0): "SCHED_OTHER",
+            getattr(os, "SCHED_FIFO", 1): "SCHED_FIFO",
+            getattr(os, "SCHED_RR", 2): "SCHED_RR",
+            getattr(os, "SCHED_BATCH", 3): "SCHED_BATCH",
+            getattr(os, "SCHED_IDLE", 5): "SCHED_IDLE",
+        }
+        scheduler_policy = {
+            "code": policy_code,
+            "name": policy_names.get(policy_code, f"UNKNOWN_{policy_code}"),
+        }
+    except (AttributeError, OSError):
+        pass
     return {
         "role": role,
         "pid": pid,
         "tgid": tgid,
         "tids": tids,
         "nice_value": ready.get("nice_value"),
+        "scheduler_policy": scheduler_policy,
         "single_threaded_verified": len(tids) == 1,
         "identity_source": "/proc/<pid>/task and /proc/<pid>/status",
     }

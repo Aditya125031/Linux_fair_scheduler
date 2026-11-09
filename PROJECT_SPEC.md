@@ -1481,35 +1481,19 @@ For the complete experiment:
 
 
 
-Implement Jain's fairness index.
+Use the project-defined capacity-normalized Delta (Δ) and directional partitioned ΔB→I metrics over scheduler-clock micro-windows, as specified in `docs/metric_definitions.md`.
 
 
 
-Use it only where the comparison is meaningful.
+For each active target task in a window, calculate runnable demand R_i = E_i + W_i, fair capacity C_i = M × τ × w_i / Σw_j, entitlement Ent_i = min(R_i, C_i), and normalized service x_i = min(1, E_i / Ent_i). Calculate deficits d_i = max(x_j) - x_i, global Δ = mean(d_i), and class means m_I and m_B. Report ΔB→I = max(0, m_I - m_B) and ΔI→B = max(0, m_B - m_I).
 
 
 
-For example, calculate Jain's index across equal-demand batch workers.
+Use only verified target-task identities, CPU affinity, scheduler weights, and complete micro-windows. Confirm that no restrictive cgroup CPU quota changes the usable capacity. Omit or mark a directional result unavailable when both workload classes are not represented. Do not trigger a scheduling policy from this measurement stage.
 
 
 
-Do not blindly calculate Jain's index across different task classes with different intended CPU demands.
-
-
-
-Document:
-
-
-
-\- What values enter the fairness calculation.
-
-\- Why the selected tasks are comparable.
-
-\- How zero-service and incomplete observations are handled.
-
-
-
-Consider normalized service share where there is a defensible expected-share definition.
+Document the active-demand threshold, window boundaries, weight source, handling of incomplete or lost intervals, and any selected SLO-derived threshold ε. Keep measured fairness analysis separate from the wait-aware policy simulator.
 
 
 
@@ -1711,7 +1695,7 @@ Generate at least these graphs when suitable data exists:
 
 5\. Per-worker CPU service-time distribution.
 
-6\. Jain fairness index across comparable batch workers.
+6\. Global Delta and directional ΔB→I / ΔI→B values across scheduler windows.
 
 7\. Trade-off graph showing interactive latency against batch throughput.
 
@@ -1767,7 +1751,7 @@ At minimum, test:
 
 \- CPU-service accounting.
 
-\- Jain fairness calculation.
+\- Delta and directional fairness calculations.
 
 \- Percentile calculation.
 
@@ -2229,7 +2213,7 @@ Responsible for:
 
 \- CPU share.
 
-\- Jain fairness.
+\- Delta and directional fairness.
 
 \- Statistical analysis.
 

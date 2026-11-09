@@ -1,6 +1,6 @@
 # Linux CPU Scheduling Fairness Study
 
-This repository records approximate user-space interactive response time, request turnaround, runnable delay, and per-task CPU service under mixed interactive and batch workloads. The separate Delta (Δ) / partitioned ΔB→I fairness calculation is not produced by the current per-run analyzer. The Windows checkout is the development environment. Real scheduler tracing and experiments are run separately in the Ubuntu KVM guest; a Windows test cannot validate eBPF or Linux scheduler behavior.
+This repository records approximate user-space interactive response time, request turnaround, runnable delay, per-task CPU service, and trace-window Delta (Δ) / partitioned ΔB→I fairness values under mixed interactive and batch workloads. Delta values are emitted only when the run includes verified scheduler-policy and CPU-capacity metadata. The Windows checkout is the development environment. Real scheduler tracing and experiments are run separately in the Ubuntu KVM guest; a Windows test cannot validate eBPF or Linux scheduler behavior.
 
 The baseline and one fixed-nice pilot have completed in the Ubuntu KVM guest, including preflight, the bpftrace collector, both workloads, and wait/service reconstruction. The fixed-nice run verified batch nice +5 while interactive remained at nice 0. Per-run latency, throughput, wait, and service summaries are available; repeated runs and aggregation are still needed before drawing policy conclusions.
 

@@ -13,6 +13,13 @@ class SystemInfoTests(unittest.TestCase):
         self.assertIsInstance(info["is_linux"], bool)
         self.assertIsInstance(info["is_windows"], bool)
         self.assertTrue(info["logical_cpu_count"] is None or info["logical_cpu_count"] > 0)
+        self.assertTrue(
+            info["effective_cpu_count"] is None or info["effective_cpu_count"] > 0
+        )
+        self.assertTrue(
+            info["cpu_affinity"] is None or len(info["cpu_affinity"]) == info["effective_cpu_count"]
+        )
+        self.assertIn(info["cpu_quota"]["status"], {"unlimited", "limited", "unknown"})
 
     def test_output_directory_is_observed_without_being_created(self):
         with TemporaryDirectory() as directory:

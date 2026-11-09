@@ -88,7 +88,7 @@ Print the per-run metrics summary without modifying the raw or processed artifac
     RUN_ID='paste-run-id-here'
     python3 -m cpu_fairness.cli analyze-run "results/raw/$RUN_ID"
 
-The summary reports approximate response-time and turnaround p50/p95 and sample counts, batch throughput, and per-TID runnable-wait and CPU-service summaries. Percentiles use nearest-rank. Application timing and scheduler wait use separate clock domains and are not combined.
+The summary reports approximate response-time and turnaround p50/p95 and sample counts, batch throughput, per-TID runnable-wait and CPU-service summaries, and the Delta fairness values when the run contains the required scheduler metadata. Percentiles use nearest-rank. Application timing and scheduler wait use separate clock domains and are not combined.
 
 Interactive request timing is defined as follows:
 
@@ -96,7 +96,9 @@ Interactive request timing is defined as follows:
 - `turnaround_time_ns` is completion minus intended release.
 - Per-request CPU service time is not currently measured. Scheduler-derived CPU service is reported per TID and must not be treated as a request's service time.
 
-The analyzer derives both corrected timings from the three preserved monotonic timestamps and checks any explicit corrected fields against those timestamps. Older logs called release-to-completion `response_latency_ns`; the analyzer identifies that legacy field separately, does not use it for corrected metrics, and leaves raw results unchanged. The Delta (Δ) and partitioned ΔB→I fairness calculation is a separate project metric and is not computed by `analyze-run`.
+The analyzer derives both corrected timings from the three preserved monotonic timestamps and checks any explicit corrected fields against those timestamps. Older logs called release-to-completion `response_latency_ns`; the analyzer identifies that legacy field separately, does not use it for corrected metrics, and leaves raw results unchanged. The Delta (Δ) and partitioned ΔB→I calculation is a separate scheduler-clock analysis, distinct from the application request timings.
+
+The per-window Delta output uses only scheduler-clock service and runnable-wait intervals. It omits the initial warm-up window and final partial window, uses the run's CPU affinity and verified `SCHED_OTHER` nice weights, and requires an explicitly unlimited cgroup v2 CPU quota. It reports both directional class deficits only in windows containing active tasks from both classes, without threshold-triggered policy decisions. See [metric definitions](metric_definitions.md) for the equations and current limits. Runs created before scheduler policy, CPU-affinity, and cgroup-quota metadata were added will report Delta as unavailable; their raw files remain usable for the existing metrics.
 
 ```bash
 cat /tmp/cpu-fairness-preflight.json
