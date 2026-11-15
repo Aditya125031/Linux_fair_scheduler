@@ -129,6 +129,7 @@ def aggregate_runs(
     metric_getters = {
         "interactive_response_p50_ns": lambda run: run["interactive"]["approx_response_time"]["p50_ns"],
         "interactive_response_p95_ns": lambda run: run["interactive"]["approx_response_time"]["p95_ns"],
+        "interactive_response_p99_ns": lambda run: run["interactive"]["approx_response_time"]["p99_ns"],
         "interactive_turnaround_p95_ns": lambda run: run["interactive"]["turnaround_time"]["p95_ns"],
         "batch_throughput_units_per_second": lambda run: run["batch"]["throughput_units_per_second"],
         "delta_global_mean": lambda run: run["delta_fairness"]["global_delta"]["mean"],

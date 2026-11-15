@@ -48,10 +48,11 @@ python3 -m cpu_fairness.cli run-nice-sweep --nice-values 3 10 --repeats 3 --outp
 python3 -m cpu_fairness.cli analyze-run results/raw/PASTE_RUN_ID
 python3 -m cpu_fairness.cli aggregate-runs results/raw/RUN_1 results/raw/RUN_2
 python3 -m cpu_fairness.cli plot-runs results/raw/RUN_1 results/raw/RUN_2 --output results/figures/comparison.svg
+python3 -m cpu_fairness.cli plot-diagnostics results/raw/RUN_1 results/raw/RUN_2 --output-prefix results/figures/diagnostics
 python3 -m cpu_fairness.cli simulate-run results/raw/PASTE_RUN_ID
 ```
 
-`run-pilot` collects sequential baseline/fixed-nice pairs. `run-nice-sweep` collects a baseline plus up to three fixed-nice levels for each repeat and stops on the first failed run; it is bounded to three repeats. `aggregate-runs` requires matching workload settings and reports run-level means, medians, individual run values, and descriptive bootstrap intervals. `plot-runs` writes a dependency-free SVG with response, turnaround, throughput, and Delta charts; separate fixed-nice values appear as separate groups. The wait-aware simulator is shown as not measured for these performance outcomes because it only generates hypothetical decisions. Plot outputs fail if they would overwrite a file. `simulate-run` writes a separate hypothetical decision log and never changes live scheduler settings.
+`run-pilot` collects sequential baseline/fixed-nice pairs. `run-nice-sweep` collects a baseline plus up to three fixed-nice levels for each repeat and stops on the first failed run; it is bounded to three repeats. `aggregate-runs` requires matching workload settings and reports run-level means, medians, individual run values, and descriptive bootstrap intervals. `plot-runs` writes a dependency-free SVG with response, turnaround, throughput, and Delta charts; `plot-diagnostics` writes CDF, per-task service, windowed-Delta, and latency/throughput graphs from raw run files. Separate fixed-nice values appear as separate groups. The wait-aware simulator is shown as not measured for performance outcomes because it only generates hypothetical decisions. The current single-batch-worker smoke cannot provide an increasing-contention graph. Plot outputs fail if they would overwrite a file. `simulate-run` writes a separate hypothetical decision log and never changes live scheduler settings.
 
 Use these only in the Ubuntu guest. Follow [docs/reproduction_guide.md](docs/reproduction_guide.md) for setup and [docs/graph_analysis.md](docs/graph_analysis.md) for the fixed-nice sweep, graph meanings, and sample interpretation.
 

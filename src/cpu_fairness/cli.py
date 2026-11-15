@@ -11,7 +11,7 @@ from pathlib import Path
 from cpu_fairness import __version__
 from cpu_fairness.analysis.aggregation import AggregationError, aggregate_runs
 from cpu_fairness.analysis.metrics import AnalysisError, analyze_run
-from cpu_fairness.analysis.plots import PlotError, save_comparison_plot
+from cpu_fairness.analysis.plots import PlotError, save_comparison_plot, save_diagnostic_plots
 from cpu_fairness.config import ConfigError, load_config
 from cpu_fairness.experiment import ExperimentError, run_nice_sweep, run_pilot, run_smoke
 from cpu_fairness.preflight import collect_preflight, format_preflight
@@ -86,6 +86,12 @@ def _build_parser() -> argparse.ArgumentParser:
     plot_parser.add_argument("--bootstrap-samples", type=int, default=2000)
     plot_parser.add_argument("--seed", type=int, default=42)
 
+    diagnostics_parser = subparsers.add_parser(
+        "plot-diagnostics", help="create response, wait, service, Delta-window, and trade-off SVGs"
+    )
+    diagnostics_parser.add_argument("run_directories", nargs="+", help="matching completed results/raw/<run-id> directories")
+    diagnostics_parser.add_argument("--output-prefix", default="results/figures/diagnostics")
+
     simulator_parser = subparsers.add_parser(
         "simulate-run", help="produce bounded simulated decisions from one measured run"
     )
@@ -125,6 +131,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "data_kind": "measured_comparison_plot",
                 "run_count": summary["run_count"],
                 "output": str(save_comparison_plot(summary, args.output)),
+            }
+        elif args.command == "plot-diagnostics":
+            summary = aggregate_runs(args.run_directories)
+            outputs = save_diagnostic_plots(args.run_directories, args.output_prefix)
+            result = {
+                "data_kind": "measured_diagnostic_plots",
+                "run_count": summary["run_count"],
+                "outputs": [str(path) for path in outputs],
+                "limitations": [
+                    "response and runnable-wait CDFs pool samples within policy groups",
+                    "CPU service is per target TID per run; this workload has one TID per class",
+                    "Delta CDF uses eligible windows only",
+                    "these runs have one batch worker, so no increasing-worker-contention comparison is available",
+                ],
             }
         elif args.command == "simulate-run":
             run_path = Path(args.run_directory).expanduser().resolve()

@@ -2,7 +2,9 @@
 
 ## What the comparison chart shows
 
-Run `plot-runs` on completed matching run directories. It creates one SVG with six panels: approximate interactive response p95, interactive turnaround p95, batch throughput, global Delta, directional Delta B→I, and directional Delta I→B. Every measured policy group is shown separately, including each fixed batch nice value. Bars are means of run-level metrics; whiskers are descriptive bootstrap intervals when at least two runs contribute. The SVG also includes a `Wait-aware (simulator only)` category marked **not measured** for all performance outcomes.
+Run `plot-runs` on completed matching run directories. It creates one SVG with seven panels: approximate interactive response p95 and p99, interactive turnaround p95, batch throughput, global Delta, directional Delta B→I, and directional Delta I→B. Every measured policy group is shown separately, including each fixed batch nice value. Bars are means of run-level metrics; whiskers are descriptive bootstrap intervals when at least two runs contribute. The SVG also includes a `Wait-aware (simulator only)` category marked **not measured** for all performance outcomes.
+
+For the other views supported by existing run files, `plot-diagnostics` writes five SVGs: an interactive response CDF, a runnable-wait CDF split by workload class, per-target-TID CPU-service CDF, eligible scheduler-window Delta CDFs, and a per-run response/throughput scatter plot. These show samples across runs, not independent workers. The current smoke workload has only one batch worker. Therefore it cannot produce the spec's graph of p95/p99 latency under increasing batch-worker contention, and the per-task service chart is not a multi-worker distribution. Fixed nice levels change scheduling weights; they are not batch-worker-count contention levels.
 
 The baseline label says `EEVDF baseline (kernel default)`. This identifies the default `SCHED_OTHER` workload configuration used in the reported Ubuntu guest. The analyzer verifies Linux scheduling class metadata, but it does not independently identify the kernel's internal fair-scheduler implementation; check the actual guest kernel/build before making a precise EEVDF claim.
 
@@ -68,6 +70,21 @@ python3 -m cpu_fairness.cli plot-runs \
   results/raw/quick-fixed-nice-20261109T165227Z-ea1ddb0d \
   --output results/figures/pilot-comparison.svg
 ```
+
+To generate the additional distributions and trade-off graphs from these same runs:
+
+```bash
+python3 -m cpu_fairness.cli plot-diagnostics \
+  results/raw/quick-smoke-20261109T165112Z-0c17b9c7 \
+  results/raw/quick-fixed-nice-20261109T165122Z-a8282eca \
+  results/raw/quick-smoke-20261109T165135Z-7b1d34ca \
+  results/raw/quick-fixed-nice-20261109T165146Z-db84089e \
+  results/raw/quick-smoke-20261109T165202Z-d627a5dd \
+  results/raw/quick-fixed-nice-20261109T165227Z-ea1ddb0d \
+  --output-prefix results/figures/pilot
+```
+
+It writes `pilot.response-cdf.svg`, `pilot.runnable-wait-cdf.svg`, `pilot.cpu-service.svg`, `pilot.delta-windows-cdf.svg`, and `pilot.latency-throughput.svg`. If Delta or wait samples are unavailable, the corresponding CDF is marked empty rather than fabricated. Choose a fresh output prefix for each generation.
 
 If you also ran a nice sweep, add each emitted `results/raw/<run-id>` path to the same `plot-runs` command. The combined run list must use matching workload settings, and each policy group needs at least two runs for an interval. The aggregate JSON printed by `aggregate-runs` includes individual run-level values; save it with shell redirection if a file is desired. Never overwrite prior plots or run outputs; choose a fresh filename.
 

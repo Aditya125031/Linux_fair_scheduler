@@ -123,11 +123,11 @@ class RunMetricsTests(unittest.TestCase):
         self.assertEqual(result["policy"], "fixed_nice")
         self.assertEqual(
             result["interactive"]["approx_response_time"],
-            {"sample_count": 5, "method": "nearest_rank", "p50_ns": 30, "p95_ns": 50},
+            {"sample_count": 5, "method": "nearest_rank", "p50_ns": 30, "p95_ns": 50, "p99_ns": 50},
         )
         self.assertEqual(
             result["interactive"]["turnaround_time"],
-            {"sample_count": 5, "method": "nearest_rank", "p50_ns": 130, "p95_ns": 150},
+            {"sample_count": 5, "method": "nearest_rank", "p50_ns": 130, "p95_ns": 150, "p99_ns": 150},
         )
         self.assertNotEqual(
             result["interactive"]["approx_response_time"]["p50_ns"],
@@ -242,7 +242,7 @@ class RunMetricsTests(unittest.TestCase):
     def test_nearest_rank_reports_empty_sample_count_without_inventing_values(self):
         self.assertEqual(
             nearest_rank_summary([]),
-            {"sample_count": 0, "method": "nearest_rank", "p50_ns": None, "p95_ns": None},
+            {"sample_count": 0, "method": "nearest_rank", "p50_ns": None, "p95_ns": None, "p99_ns": None},
         )
 
     def test_rejects_noncompleted_run(self):

@@ -50,7 +50,7 @@ def _required_nonnegative_integer(record: dict[str, Any], key: str, label: str) 
 
 
 def nearest_rank_summary(values: list[int]) -> dict[str, Any]:
-    """Return sample count and nearest-rank p50/p95 for nonnegative integer values."""
+    """Return sample count and nearest-rank p50/p95/p99 for integer samples."""
     if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
         raise AnalysisError("percentile samples must be nonnegative integers")
     ordered = sorted(values)
@@ -66,6 +66,7 @@ def nearest_rank_summary(values: list[int]) -> dict[str, Any]:
         "method": "nearest_rank",
         "p50_ns": nearest_rank(0.50),
         "p95_ns": nearest_rank(0.95),
+        "p99_ns": nearest_rank(0.99),
     }
 
 
