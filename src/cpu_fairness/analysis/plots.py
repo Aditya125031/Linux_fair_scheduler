@@ -6,9 +6,9 @@ from html import escape
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from cpu_fairness.analysis.aggregation import _policy_label
+from cpu_fairness.analysis.aggregation import _policy_label, _workload_signature
 from cpu_fairness.analysis.metrics import AnalysisError, analyze_run
 
 
@@ -257,20 +257,42 @@ def _write_cdf(
         stream.write("\n".join(elements) + "\n")
 
 
-def _collect_diagnostic_data(run_directories: list[str | Path]) -> list[dict[str, Any]]:
+def _collect_diagnostic_data(
+    run_directories: list[str | Path],
+    progress: Callable[[int, int, str], None] | None = None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     palette = ["#4c78a8", "#f58518", "#54a24b", "#e45756", "#b279a2", "#72b7b2"]
-    labels = sorted({
-        _policy_label(json.loads((Path(directory).expanduser() / "manifest.json").read_text(encoding="utf-8"))["configuration"]["policy"])
-        for directory in run_directories
-    })
-    colors = {label: palette[index % len(palette)] for index, label in enumerate(labels)}
+    manifests: list[dict[str, Any]] = []
+    signatures: set[str] = set()
+    run_ids: set[str] = set()
+    labels_set: set[str] = set()
     for directory in run_directories:
         run_path = Path(directory).expanduser().resolve()
         try:
             manifest = json.loads((run_path / "manifest.json").read_text(encoding="utf-8"))
             config = manifest["configuration"]
             label = _policy_label(config["policy"])
+            run_id = manifest.get("run_id", run_path.name)
+            if run_id in run_ids:
+                raise PlotError(f"duplicate run ID {run_id!r}")
+            run_ids.add(run_id)
+            labels_set.add(label)
+            signatures.add(_workload_signature(config))
+            manifests.append(manifest)
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise PlotError(f"cannot read graph manifest at {run_path}: {exc}") from exc
+    if len(signatures) != 1:
+        raise PlotError("runs have different workload configurations; plot matching runs separately")
+    labels = sorted(labels_set)
+    colors = {label: palette[index % len(palette)] for index, label in enumerate(labels)}
+    for index, (directory, manifest) in enumerate(zip(run_directories, manifests), start=1):
+        run_path = Path(directory).expanduser().resolve()
+        try:
+            config = manifest["configuration"]
+            label = _policy_label(config["policy"])
+            if progress is not None:
+                progress(index, len(run_directories), run_path.name)
             processes = manifest["processes"]
             interactive_tid = processes["interactive"]["tids"][0]
             batch_tid = processes["batch"]["tids"][0]
@@ -357,7 +379,9 @@ def _save_tradeoff_chart(path: Path, records: list[dict[str, Any]]) -> None:
 
 
 def save_diagnostic_plots(
-    run_directories: list[str | Path], output_prefix: str | Path
+    run_directories: list[str | Path],
+    output_prefix: str | Path,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> list[Path]:
     """Write request, wait, service, Delta-window, and trade-off SVG diagnostics."""
     if not run_directories:
@@ -365,7 +389,7 @@ def save_diagnostic_plots(
     prefix = Path(output_prefix).expanduser()
     if not prefix.parent.is_dir():
         raise PlotError(f"output directory does not exist: {prefix.parent}")
-    records = _collect_diagnostic_data(run_directories)
+    records = _collect_diagnostic_data(run_directories, progress)
     paths = {
         name: _output_path(prefix, name)
         for name in ("response-cdf", "runnable-wait-cdf", "cpu-service", "delta-windows-cdf", "latency-throughput")

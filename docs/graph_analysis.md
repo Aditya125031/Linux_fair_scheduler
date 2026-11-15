@@ -86,6 +86,8 @@ python3 -m cpu_fairness.cli plot-diagnostics \
 
 It writes `pilot.response-cdf.svg`, `pilot.runnable-wait-cdf.svg`, `pilot.cpu-service.svg`, `pilot.delta-windows-cdf.svg`, and `pilot.latency-throughput.svg`. If Delta or wait samples are unavailable, the corresponding CDF is marked empty rather than fabricated. Choose a fresh output prefix for each generation.
 
+The command reprocesses each run's large raw trace once and prints `Analyzing trace i/N` progress on stderr. It reads run directories but writes plots only after it has collected all run data. You may interrupt during trace processing without changing the raw run data; use a new output prefix if all five graphs had already been written.
+
 If you also ran a nice sweep, add each emitted `results/raw/<run-id>` path to the same `plot-runs` command. The combined run list must use matching workload settings, and each policy group needs at least two runs for an interval. The aggregate JSON printed by `aggregate-runs` includes individual run-level values; save it with shell redirection if a file is desired. Never overwrite prior plots or run outputs; choose a fresh filename.
 
 To inspect the request sequence and the batch summary for one run without dumping the full scheduler trace:

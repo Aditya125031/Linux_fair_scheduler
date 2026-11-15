@@ -133,11 +133,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "output": str(save_comparison_plot(summary, args.output)),
             }
         elif args.command == "plot-diagnostics":
-            summary = aggregate_runs(args.run_directories)
-            outputs = save_diagnostic_plots(args.run_directories, args.output_prefix)
+            def report_diagnostic_progress(index: int, total: int, run_id: str) -> None:
+                print(f"Analyzing trace {index}/{total}: {run_id}", file=sys.stderr)
+
+            outputs = save_diagnostic_plots(
+                args.run_directories,
+                args.output_prefix,
+                progress=report_diagnostic_progress,
+            )
             result = {
                 "data_kind": "measured_diagnostic_plots",
-                "run_count": summary["run_count"],
+                "run_count": len(args.run_directories),
                 "outputs": [str(path) for path in outputs],
                 "limitations": [
                     "response and runnable-wait CDFs pool samples within policy groups",
