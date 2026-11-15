@@ -33,6 +33,18 @@ def _workload_signature(configuration: dict[str, Any]) -> str:
     return json.dumps(signature, sort_keys=True, separators=(",", ":"))
 
 
+def _policy_label(policy: dict[str, Any]) -> str:
+    policy_type = policy.get("type")
+    if policy_type == "baseline":
+        return "EEVDF baseline (kernel default)"
+    if policy_type == "fixed_nice":
+        nice_value = policy.get("batch_nice")
+        if isinstance(nice_value, bool) or not isinstance(nice_value, int):
+            raise AggregationError("fixed_nice policy is missing its integer batch_nice value")
+        return f"Fixed nice +{nice_value}"
+    raise AggregationError(f"unsupported measured policy configuration: {policy_type!r}")
+
+
 def _bootstrap_mean_interval(
     values: list[float], samples: int, seed: int
 ) -> dict[str, float | int | None]:
@@ -62,6 +74,7 @@ def _metric_summary(values: list[float], samples: int, seed: int) -> dict[str, A
         }
     return {
         "run_count": len(values),
+        "run_values": values,
         "mean": statistics.fmean(values),
         "median": statistics.median(values),
         "bootstrap_95_ci_for_mean": _bootstrap_mean_interval(values, samples, seed),
@@ -82,7 +95,7 @@ def aggregate_runs(
     analyses: list[dict[str, Any]] = []
     signatures: set[str] = set()
     seen_run_ids: set[str] = set()
-    policy_signatures: dict[str, str] = {}
+    policy_labels: dict[str, dict[str, Any]] = {}
     for directory in run_directories:
         path = Path(directory).expanduser().resolve()
         try:
@@ -99,17 +112,16 @@ def aggregate_runs(
         policy_type = analysis.get("policy")
         if not isinstance(policy_config, dict) or policy_config.get("type") != policy_type:
             raise AggregationError(f"run {run_id!r} has inconsistent policy metadata")
-        policy_signature = json.dumps(policy_config, sort_keys=True, separators=(",", ":"))
-        prior_signature = policy_signatures.setdefault(policy_type, policy_signature)
-        if prior_signature != policy_signature:
-            raise AggregationError(f"runs for policy {policy_type!r} use different policy settings")
+        label = _policy_label(policy_config)
+        policy_labels[label] = policy_config
+        analysis["_comparison_label"] = label
         analyses.append(analysis)
     if len(signatures) != 1:
         raise AggregationError("runs have different workload configurations; aggregate matching pilots separately")
 
     grouped: dict[str, list[dict[str, Any]]] = {}
     for analysis in analyses:
-        policy = analysis.get("policy")
+        policy = analysis.get("_comparison_label")
         if not isinstance(policy, str) or not policy:
             raise AggregationError(f"run {analysis.get('run_id')} has no policy label")
         grouped.setdefault(policy, []).append(analysis)
@@ -141,10 +153,12 @@ def aggregate_runs(
             "run_ids": [run["run_id"] for run in runs],
             "metrics": metric_summaries,
         }
+    workload_configuration = json.loads(next(iter(signatures)))
     return {
         "data_kind": "measured_repeated_run_summary",
         "run_count": len(analyses),
         "workload_configuration_signature": next(iter(signatures)),
+        "workload_configuration": workload_configuration,
         "bootstrap": {
             "method": "percentile bootstrap over independent run-level metric values",
             "samples": bootstrap_samples,
@@ -152,5 +166,7 @@ def aggregate_runs(
             "confidence_level": 0.95,
         },
         "comparisons": "descriptive only; no statistical significance claim or paired-run inference",
+        "wait_aware_policy": "simulator only; it does not produce measured response, throughput, or Delta outcomes",
+        "policy_configurations": policy_labels,
         "policies": policies,
     }

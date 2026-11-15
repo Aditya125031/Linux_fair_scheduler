@@ -100,14 +100,25 @@ python3 -m cpu_fairness.cli aggregate-runs \
   results/raw/BASELINE_RUN_3 results/raw/FIXED_NICE_RUN_3
 ```
 
-Aggregation rejects mismatched workload and policy settings, reports run-level means/medians and deterministic bootstrap intervals, and makes no significance claim. Plotting is optional and needs Matplotlib. The simulator reads a completed run and writes hypothetical decisions only:
+Aggregation rejects mismatched workload settings, separates each fixed-nice value into its own group, and reports run-level means/medians and descriptive bootstrap intervals. It makes no significance claim. Plotting uses the standard library and writes an SVG; the wait-aware simulator is marked not measured in performance charts:
 
 ```bash
 python3 -m cpu_fairness.cli plot-runs \
   results/raw/BASELINE_RUN_1 results/raw/FIXED_NICE_RUN_1 \
-  --output results/figures/pilot-comparison.png
+  --output results/figures/pilot-comparison.svg
 python3 -m cpu_fairness.cli simulate-run results/raw/BASELINE_RUN_1
 ```
+
+To compare several fixed batch nice levels, run a bounded sequential sweep (maximum three levels and three repeats):
+
+```bash
+python3 -m cpu_fairness.cli run-nice-sweep \
+  --nice-values 3 10 \
+  --repeats 3 \
+  --output-root results
+```
+
+It runs one baseline and each requested nice level per repeat, stops on failure, and prints the run IDs. Add those IDs to `plot-runs`; choose a new SVG path because outputs are never overwritten. See [graph analysis and interpretation](graph_analysis.md) for the workload sequence, chart meanings, and example pilot interpretation.
 
 Both output paths fail rather than overwrite existing files. The simulator does not run as root and does not alter the live scheduler.
 

@@ -8,6 +8,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -437,5 +438,70 @@ def run_pilot(
         "data_kind": "measured_pilot_runs",
         "status": "completed",
         "repeats_requested": repeats,
+        "runs": run_records,
+    }
+
+
+def run_nice_sweep(
+    nice_values: list[int],
+    repeats: int = 3,
+    output_root: str | Path = "results",
+    baseline_config: str | Path = "configs/quick.json",
+    fixed_nice_config: str | Path = "configs/fixed_nice_quick.json",
+) -> dict[str, Any]:
+    """Run bounded sequential baseline and fixed-nice levels; stop after a failure."""
+    if not nice_values or len(nice_values) > 3:
+        raise ConfigError("provide one through three fixed nice values")
+    if len(set(nice_values)) != len(nice_values):
+        raise ConfigError("fixed nice values must not contain duplicates")
+    for value in nice_values:
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 19:
+            raise ConfigError("fixed nice values must be integers from 1 through 19")
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or not 1 <= repeats <= 3:
+        raise ConfigError("nice-sweep repeats must be an integer from 1 through 3")
+
+    try:
+        base = load_config(fixed_nice_config)
+    except ConfigError as exc:
+        raise ConfigError(f"cannot load fixed-nice base configuration: {exc}") from exc
+    run_records: list[dict[str, Any]] = []
+    with tempfile.TemporaryDirectory(prefix="cpu-fairness-nice-sweep-") as temporary:
+        temp_root = Path(temporary)
+        for repetition in range(1, repeats + 1):
+            configs: list[tuple[str, str | Path, int | None]] = [
+                ("EEVDF baseline (kernel default)", baseline_config, None)
+            ]
+            for nice_value in nice_values:
+                config = dict(base)
+                config["experiment_id"] = f"nice-sweep-{nice_value}"
+                config["policy"] = {"type": "fixed_nice", "batch_nice": nice_value}
+                config_path = temp_root / f"fixed-nice-{nice_value}.json"
+                _write_json(config_path, config)
+                configs.append((f"Fixed nice +{nice_value}", config_path, nice_value))
+
+            for policy_label, config_path, nice_value in configs:
+                manifest = run_smoke(config_path, output_root)
+                record = {
+                    "repetition": repetition,
+                    "policy": policy_label,
+                    "batch_nice": nice_value,
+                    "run_id": manifest.get("run_id"),
+                    "status": manifest.get("status"),
+                }
+                run_records.append(record)
+                if manifest.get("status") != "completed":
+                    return {
+                        "data_kind": "measured_nice_sweep_runs",
+                        "status": "failed",
+                        "repeats_requested": repeats,
+                        "nice_values": nice_values,
+                        "runs": run_records,
+                        "error": f"stopping after failed run {record['run_id']}",
+                    }
+    return {
+        "data_kind": "measured_nice_sweep_runs",
+        "status": "completed",
+        "repeats_requested": repeats,
+        "nice_values": nice_values,
         "runs": run_records,
     }

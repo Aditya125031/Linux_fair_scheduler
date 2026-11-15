@@ -1,5 +1,4 @@
 import unittest
-import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -49,23 +48,24 @@ class PlotDataTests(unittest.TestCase):
                 },
             }
         )
-        self.assertEqual(result["interactive_response_p95_ms"], [2.0])
-        self.assertEqual(result["batch_throughput_units_per_second"], [10.0])
-        self.assertEqual(result["delta"]["ΔB→I"], [0.2])
-        self.assertIsNone(result["delta"]["ΔI→B"][0])
+        self.assertEqual(result["metrics"]["interactive_response_p95_ns"], [{"mean": 2_000_000}])
+        self.assertEqual(result["metrics"]["batch_throughput_units_per_second"], [{"mean": 10.0}])
+        self.assertEqual(result["labels"][-1], "Wait-aware (simulator only)")
+        self.assertEqual(result["metrics"]["delta_interactive_to_batch_mean"][-2], {"mean": 0.05})
+        self.assertIsNone(result["metrics"]["delta_interactive_to_batch_mean"][-1])
 
     def test_rejects_nonmeasured_input(self):
         with self.assertRaisesRegex(PlotError, "measured repeated-run summaries"):
             comparison_plot_data({"data_kind": "simulated_policy_decisions"})
 
-    def test_saves_png_without_overwriting(self):
-        if importlib.util.find_spec("matplotlib") is None:
-            self.skipTest("optional Matplotlib is not installed")
+    def test_saves_svg_without_optional_dependencies_and_refuses_overwrite(self):
         with TemporaryDirectory() as directory:
-            output = Path(directory) / "comparison.png"
+            output = Path(directory) / "comparison.svg"
             saved = save_comparison_plot(self._aggregate(), output)
             self.assertEqual(saved, output.resolve())
-            self.assertGreater(output.stat().st_size, 0)
+            chart = output.read_text(encoding="utf-8")
+            self.assertIn("Wait-aware is an offline simulator", chart)
+            self.assertIn("not measured", chart)
             with self.assertRaises(FileExistsError):
                 save_comparison_plot(self._aggregate(), output)
 

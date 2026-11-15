@@ -24,7 +24,10 @@ class AggregationTests(unittest.TestCase):
                         "duration_seconds": duration,
                         "interactive": {"arrival_interval_ms": 100},
                         "batch": {"workers": 1},
-                        "policy": {"type": policy},
+                        "policy": {
+                            "type": policy,
+                            **({"batch_nice": 5} if policy == "fixed_nice" else {}),
+                        },
                     }
                 }
             ),
@@ -69,8 +72,8 @@ class AggregationTests(unittest.TestCase):
                 result = aggregate_runs(paths, bootstrap_samples=500, seed=7)
 
         self.assertEqual(result["data_kind"], "measured_repeated_run_summary")
-        self.assertEqual(result["policies"]["baseline"]["run_count"], 2)
-        baseline = result["policies"]["baseline"]["metrics"]["interactive_response_p50_ns"]
+        self.assertEqual(result["policies"]["EEVDF baseline (kernel default)"]["run_count"], 2)
+        baseline = result["policies"]["EEVDF baseline (kernel default)"]["metrics"]["interactive_response_p50_ns"]
         self.assertEqual(baseline["mean"], 150.0)
         self.assertEqual(baseline["median"], 150.0)
         self.assertEqual(baseline["bootstrap_95_ci_for_mean"]["sample_count"], 2)
@@ -103,7 +106,7 @@ class AggregationTests(unittest.TestCase):
             ), self.assertRaisesRegex(AggregationError, "different workload configurations"):
                 aggregate_runs(paths)
 
-    def test_rejects_different_settings_within_same_policy_group(self):
+    def test_groups_distinct_fixed_nice_values_separately(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             paths = [
@@ -122,8 +125,11 @@ class AggregationTests(unittest.TestCase):
             with patch(
                 "cpu_fairness.analysis.aggregation.analyze_run",
                 side_effect=lambda path: analyses[Path(path).name],
-            ), self.assertRaisesRegex(AggregationError, "different policy settings"):
-                aggregate_runs(paths)
+            ):
+                result = aggregate_runs(paths)
+
+        self.assertIn("Fixed nice +5", result["policies"])
+        self.assertIn("Fixed nice +10", result["policies"])
 
 
 if __name__ == "__main__":

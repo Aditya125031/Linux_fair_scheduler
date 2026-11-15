@@ -44,19 +44,20 @@ The Linux-only commands are:
 python3 -m cpu_fairness.cli preflight --json
 python3 -m cpu_fairness.cli smoke --config configs/quick.json --output-root results
 python3 -m cpu_fairness.cli run-pilot --repeats 3 --output-root results
+python3 -m cpu_fairness.cli run-nice-sweep --nice-values 3 10 --repeats 3 --output-root results
 python3 -m cpu_fairness.cli analyze-run results/raw/PASTE_RUN_ID
 python3 -m cpu_fairness.cli aggregate-runs results/raw/RUN_1 results/raw/RUN_2
-python3 -m cpu_fairness.cli plot-runs results/raw/RUN_1 results/raw/RUN_2
+python3 -m cpu_fairness.cli plot-runs results/raw/RUN_1 results/raw/RUN_2 --output results/figures/comparison.svg
 python3 -m cpu_fairness.cli simulate-run results/raw/PASTE_RUN_ID
 ```
 
-`run-pilot` collects sequential baseline/fixed-nice pairs and stops on the first failed run. `aggregate-runs` requires matching workload settings and reports run-level summaries with bootstrap confidence intervals; one run is insufficient for an interval. `plot-runs` uses the optional analysis dependencies and writes a measured-only PNG, failing if it would overwrite a file. `simulate-run` writes a separate hypothetical decision log under that run's processed directory and never changes scheduler settings or reports simulated performance outcomes.
+`run-pilot` collects sequential baseline/fixed-nice pairs. `run-nice-sweep` collects a baseline plus up to three fixed-nice levels for each repeat and stops on the first failed run; it is bounded to three repeats. `aggregate-runs` requires matching workload settings and reports run-level means, medians, individual run values, and descriptive bootstrap intervals. `plot-runs` writes a dependency-free SVG with response, turnaround, throughput, and Delta charts; separate fixed-nice values appear as separate groups. The wait-aware simulator is shown as not measured for these performance outcomes because it only generates hypothetical decisions. Plot outputs fail if they would overwrite a file. `simulate-run` writes a separate hypothetical decision log and never changes live scheduler settings.
 
-Use these only in the Ubuntu guest. Follow [docs/reproduction_guide.md](docs/reproduction_guide.md) for setup and the validation checklist.
+Use these only in the Ubuntu guest. Follow [docs/reproduction_guide.md](docs/reproduction_guide.md) for setup and [docs/graph_analysis.md](docs/graph_analysis.md) for the fixed-nice sweep, graph meanings, and sample interpretation.
 
 ## Dependencies
 
-The core runner and trace analysis use the Python standard library. `requirements.txt` installs the project in editable mode and adds pytest for tests. The optional `analysis` extra in `pyproject.toml` provides Matplotlib for plots. Check target guest compatibility before installing it; plotting is optional and does not affect measurement collection.
+The core runner, trace analysis, aggregation, and SVG charts use the Python standard library. `requirements.txt` installs the project in editable mode and adds pytest for tests. No plotting package is needed for `plot-runs`.
 
 ## Project layout
 

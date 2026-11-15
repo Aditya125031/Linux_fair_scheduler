@@ -13,7 +13,7 @@ from cpu_fairness.analysis.aggregation import AggregationError, aggregate_runs
 from cpu_fairness.analysis.metrics import AnalysisError, analyze_run
 from cpu_fairness.analysis.plots import PlotError, save_comparison_plot
 from cpu_fairness.config import ConfigError, load_config
-from cpu_fairness.experiment import ExperimentError, run_pilot, run_smoke
+from cpu_fairness.experiment import ExperimentError, run_nice_sweep, run_pilot, run_smoke
 from cpu_fairness.preflight import collect_preflight, format_preflight
 from cpu_fairness.policies.simulator import (
     SimulationError,
@@ -52,6 +52,15 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_parser.add_argument("--baseline-config", default="configs/quick.json")
     pilot_parser.add_argument("--fixed-nice-config", default="configs/fixed_nice_quick.json")
 
+    sweep_parser = subparsers.add_parser(
+        "run-nice-sweep", help="run a bounded sequential comparison across fixed batch nice values"
+    )
+    sweep_parser.add_argument("--nice-values", type=int, nargs="+", required=True)
+    sweep_parser.add_argument("--repeats", type=int, default=3)
+    sweep_parser.add_argument("--output-root", default="results")
+    sweep_parser.add_argument("--baseline-config", default="configs/quick.json")
+    sweep_parser.add_argument("--fixed-nice-config", default="configs/fixed_nice_quick.json")
+
     analysis_parser = subparsers.add_parser(
         "analyze-run", help="summarize metrics from one completed run"
     )
@@ -70,10 +79,10 @@ def _build_parser() -> argparse.ArgumentParser:
     aggregate_parser.add_argument("--seed", type=int, default=42)
 
     plot_parser = subparsers.add_parser(
-        "plot-runs", help="plot measured summaries from matching repeated runs"
+        "plot-runs", help="create dependency-free SVG charts from repeated measured runs"
     )
     plot_parser.add_argument("run_directories", nargs="+", help="completed results/raw/<run-id> directories")
-    plot_parser.add_argument("--output", default="results/figures/repeated_run_comparison.png")
+    plot_parser.add_argument("--output", default="results/figures/repeated_run_comparison.svg")
     plot_parser.add_argument("--bootstrap-samples", type=int, default=2000)
     plot_parser.add_argument("--seed", type=int, default=42)
 
@@ -139,6 +148,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
         elif args.command == "run-pilot":
             result = run_pilot(
+                repeats=args.repeats,
+                output_root=args.output_root,
+                baseline_config=args.baseline_config,
+                fixed_nice_config=args.fixed_nice_config,
+            )
+        elif args.command == "run-nice-sweep":
+            result = run_nice_sweep(
+                nice_values=args.nice_values,
                 repeats=args.repeats,
                 output_root=args.output_root,
                 baseline_config=args.baseline_config,
